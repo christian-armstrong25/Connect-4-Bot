@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Ultra-optimized Connect 4 Engine with bitboard representation for maximum performance.
+Connect 4 Engine with bitboard representation.
 """
 
 import sys
 import struct
 import os
-from typing import List, Optional
+from typing import List
 from enum import IntEnum
 
 sys.path.append(os.path.dirname(__file__))
@@ -18,11 +18,10 @@ class Player(IntEnum):
 
 
 class GameBoard:
-    """Ultra-optimized Connect 4 game board using bitboards."""
+    """Connect 4 game board using bitboards."""
 
     def __init__(self):
         self.rows, self.cols = 6, 7
-        # Bitboard representation: 7 columns * 6 rows = 42 bits per player
         self.boards = [0, 0]  # [player1, player2]
         self.heights = [0] * 7  # Column heights for fast move validation
         self.move_count = 0
@@ -31,16 +30,15 @@ class GameBoard:
         self._win_masks = self._compute_win_masks()
 
     def __str__(self):
-        """Return a simple string representation of the board."""
+        """String representation of the board."""
         result = []
-        # Display from top row (row 5) to bottom row (row 0)
         for row in range(self.rows - 1, -1, -1):
             line = "|"
             for col in range(self.cols):
                 pos = row * 7 + col
-                if self.boards[0] & (1 << pos):  # Player 1
+                if self.boards[0] & (1 << pos):
                     line += " X"
-                elif self.boards[1] & (1 << pos):  # Player 2
+                elif self.boards[1] & (1 << pos):
                     line += " O"
                 else:
                     line += " ."
@@ -54,37 +52,20 @@ class GameBoard:
         """Precompute all possible 4-in-a-row patterns."""
         masks = []
 
-        # Horizontal masks
-        for row in range(6):
-            for col in range(4):
-                mask = 0
-                for i in range(4):
-                    mask |= 1 << (row * 7 + col + i)
-                masks.append(mask)
+        # Helper function to create masks
+        def add_masks(row_start, row_end, col_start, col_end, row_delta, col_delta):
+            for row in range(row_start, row_end):
+                for col in range(col_start, col_end):
+                    mask = 0
+                    for i in range(4):
+                        mask |= 1 << ((row + i * row_delta) *
+                                      7 + col + i * col_delta)
+                    masks.append(mask)
 
-        # Vertical masks
-        for row in range(3):
-            for col in range(7):
-                mask = 0
-                for i in range(4):
-                    mask |= 1 << ((row + i) * 7 + col)
-                masks.append(mask)
-
-        # Diagonal masks (top-left to bottom-right)
-        for row in range(3):
-            for col in range(4):
-                mask = 0
-                for i in range(4):
-                    mask |= 1 << ((row + i) * 7 + col + i)
-                masks.append(mask)
-
-        # Diagonal masks (top-right to bottom-left)
-        for row in range(3):
-            for col in range(3, 7):
-                mask = 0
-                for i in range(4):
-                    mask |= 1 << ((row + i) * 7 + col - i)
-                masks.append(mask)
+        add_masks(0, 6, 0, 4, 0, 1)  # Horizontal
+        add_masks(0, 3, 0, 7, 1, 0)  # Vertical
+        add_masks(0, 3, 0, 4, 1, 1)  # Diagonal TL-BR
+        add_masks(0, 3, 3, 7, 1, -1)  # Diagonal TR-BL
 
         return masks
 
@@ -104,11 +85,11 @@ class GameBoard:
         return 0 <= column < 7 and self.heights[column] < 6
 
     def get_valid_moves(self) -> List[int]:
-        """Get list of valid columns, ordered by center preference."""
+        """Get valid columns ordered by center preference."""
         return [col for col in [3, 2, 4, 1, 5, 0, 6] if self.heights[col] < 6]
 
     def check_win(self, player: Player) -> bool:
-        """Check if player has won using bitboard operations."""
+        """Check if player has won."""
         board = self.boards[player - 1]
         return any((board & mask) == mask for mask in self._win_masks)
 
@@ -142,7 +123,7 @@ class Bot:
 
 
 class SimpleEngine:
-    """Ultra-optimized engine."""
+    """Connect 4 engine."""
 
     def __init__(self, agent_class_name: str, evaluator_name: str = "old"):
         self.board = GameBoard()
@@ -171,8 +152,7 @@ class SimpleEngine:
     def _handle_game_start(self, data: bytes):
         """Handle game start message."""
         offset = 3
-        player_byte = data[offset]
-        self.my_player = Player.PLAYER1 if player_byte == ord(
+        self.my_player = Player.PLAYER1 if data[offset] == ord(
             '1') else Player.PLAYER2
         offset += 1
 
@@ -180,34 +160,28 @@ class SimpleEngine:
         offset += 4
 
         num_moves = data[offset]
-        offset += 1
+        moves = list(data[offset+1:offset+1+num_moves]
+                     ) if num_moves > 0 else []
 
-        moves = list(data[offset:offset+num_moves]) if num_moves > 0 else []
-
-        if num_moves > 0:
+        if moves:
             self.board.reconstruct_from_moves(moves)
         else:
             self.board = GameBoard()
 
         if self.my_player == Player.PLAYER1:
-            move = self.agent.calculate_move(
-                self.board, self.my_player, self.time_per_move)
-            if move is not None and self.board.is_valid_move(move):
-                self.board.make_move(move, self.my_player)
-                self._send_move(move)
-            else:
-                sys.exit(1)
+            self._make_and_send_move()
 
     def _handle_make_move(self, data: bytes):
         """Handle opponent's move and respond."""
         opponent_move = data[3]
         opponent = Player.PLAYER2 if self.my_player == Player.PLAYER1 else Player.PLAYER1
-
         self.board.make_move(opponent_move, opponent)
+        self._make_and_send_move()
 
+    def _make_and_send_move(self):
+        """Make a move and send it."""
         move = self.agent.calculate_move(
             self.board, self.my_player, self.time_per_move)
-
         if move is not None and self.board.is_valid_move(move):
             self.board.make_move(move, self.my_player)
             self._send_move(move)
@@ -245,7 +219,6 @@ def main():
             "Usage: python3 connect4_engine.py <agent_class_name> [evaluator_name]")
         print("Available agents: MinimaxBot, IterativeDeepeningBot")
         print("Available evaluators: old, new")
-        print("Example: python3 connect4_engine.py MinimaxBot new")
         sys.exit(1)
 
     agent_class_name = sys.argv[1]
