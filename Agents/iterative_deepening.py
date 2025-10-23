@@ -13,7 +13,7 @@ class IterativeDeepeningBot(BaseNegamaxBot):
         super().__init__(evaluator_name)
 
     def calculate_move(self, board: GameBoard, player: Player, time_per_move: int) -> int:
-        buffer_ms = 0
+        buffer_ms = 2
         deadline = time.perf_counter() + ((time_per_move - buffer_ms) / 1000.0)
         return self.iterative_deepening(board, player, deadline)
 

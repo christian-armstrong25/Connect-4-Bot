@@ -4,6 +4,7 @@
 import argparse
 import sys
 import os
+import time
 from connect4_engine import GameBoard, Player
 
 sys.path.append(os.path.dirname(__file__))
@@ -56,7 +57,15 @@ def run_game(player1_spec: str, player2_spec: str, time_limit_ms: int = 25, verb
         agent = agent1 if current_player == Player.PLAYER1 else agent2
 
         # Calculate move
+        start_time = time.perf_counter()
         move = agent.calculate_move(board, current_player, time_limit_ms)
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+
+        if elapsed_ms > time_limit_ms:
+            if verbose:
+                player_name = player1_spec if current_player == Player.PLAYER1 else player2_spec
+                print(f"⏰ {player_name} timed out after {elapsed_ms:.0f}ms")
+            return "timeout"
 
         if move is None or not board.make_move(move, current_player):
             if verbose:
@@ -91,7 +100,7 @@ def run_game(player1_spec: str, player2_spec: str, time_limit_ms: int = 25, verb
 
 def run_tournament(player1: str, player2: str, games: int = 1, time_limit_ms: int = 25, verbose: bool = True):
     """Run a tournament between two players."""
-    wins = {player1: 0, player2: 0, "draw": 0, "error": 0}
+    wins = {player1: 0, player2: 0, "draw": 0, "error": 0, "timeout": 0}
 
     if verbose:
         print(
@@ -119,6 +128,7 @@ def run_tournament(player1: str, player2: str, games: int = 1, time_limit_ms: in
     print(f"{player2}: {wins[player2]} wins")
     print(f"Draws: {wins['draw']}")
     print(f"Errors: {wins['error']}")
+    print(f"Timeouts: {wins['timeout']}")
 
     if wins[player1] > wins[player2]:
         print(f"🏆 {player1} wins the tournament!")
