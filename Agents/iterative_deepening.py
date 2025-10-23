@@ -9,8 +9,11 @@ from .base_bot import BaseMinimaxBot
 class IterativeDeepeningBot(BaseMinimaxBot):
     """Iterative deepening bot that uses available time efficiently."""
 
+    def __init__(self, evaluator_name: str = "old"):
+        super().__init__(evaluator_name)
+
     def calculate_move(self, board: GameBoard, player: Player, time_per_move: int) -> int:
-        buffer_ms = 10
+        buffer_ms = 0
         deadline = time.perf_counter() + ((time_per_move - buffer_ms) / 1000.0)
         return self.iterative_deepening(board, player, deadline)
 
