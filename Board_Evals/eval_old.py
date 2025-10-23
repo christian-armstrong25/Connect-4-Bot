@@ -9,213 +9,101 @@ from connect4_engine import GameBoard, Player
 class BoardEvaluator:
     """Bitboard-based evaluation strategy matching original patterns."""
 
-    # Scoring constants - matching original
+    # Scoring constants
     WIN_SCORE = float('inf')
-    FALLBACK_THREAT_SCORE = 250
-    BUILD_THREAT_SCORE = 50
-    FALLBACK_BUILD_SCORE = 5
+    THREAT_SCORE = 250
 
-    def __init__(self):
-        # Precompute all 4-in-a-row patterns
-        self._win_masks = self._compute_win_masks()
+    # Pattern definitions: (player_positions, gap_position)
+    PATTERNS = [
+        ([1, 2, 3], 0),  # ' 111'
+        ([0, 1, 2], 3),  # '111 '
+        ([0, 2, 3], 1),  # '1 11'
+        ([0, 1, 3], 2),  # '11 1'
+    ]
 
     def evaluate_board(self, board: GameBoard, current_player=None) -> float:
-        """Evaluate the current board state using bitboards."""
-        # Check if either player has already won
+        """Evaluate the current board state."""
         if board.check_win(Player.PLAYER1):
             return self.WIN_SCORE
         if board.check_win(Player.PLAYER2):
             return -self.WIN_SCORE
 
-        # No winner yet, evaluate strategic position using bitboards
-        return self._evaluate_bitboard_position(board)
+        return self._evaluate_position(board)
 
-    def _evaluate_bitboard_position(self, board: GameBoard) -> float:
-        """Evaluate strategic position using direct bitboard operations."""
-        p1_board = board.boards[0]
-        p2_board = board.boards[1]
+    def _evaluate_position(self, board: GameBoard) -> float:
+        """Evaluate strategic position using bitboards."""
+        p1_board, p2_board = board.boards
+        playable_mask = self._get_playable_mask(p1_board, p2_board)
 
-        # Get playable positions mask
-        playable_mask = self._get_playable_positions_mask(p1_board, p2_board)
+        p1_threats = self._count_threats(p1_board, p2_board, playable_mask)
+        p2_threats = self._count_threats(p2_board, p1_board, playable_mask)
 
-        # Evaluate both players
-        p1_score = self._evaluate_player_position(
-            p1_board, p2_board, playable_mask)
-        p2_score = self._evaluate_player_position(
-            p2_board, p1_board, playable_mask)
+        return float((p1_threats - p2_threats) * self.THREAT_SCORE)
 
-        return p1_score - p2_score  # Positive for player 1, negative for player 2
-
-    def _evaluate_player_position(self, player_board: int, opponent_board: int, playable_mask: int) -> float:
-        """Evaluate position for a specific player."""
-        score = 0.0
-
-        # Check for non-playable immediate threats: ' 111', '111 ', '1 11', '11 1'
-        threats = self._count_non_playable_threats(
-            player_board, opponent_board, playable_mask)
-        score += threats * self.FALLBACK_THREAT_SCORE
-
-        return score
-
-    def _get_playable_positions_mask(self, player_board: int, opponent_board: int) -> int:
-        """Get a mask of all playable positions (not blocked by gravity)."""
-        playable_mask = 0
-
+    def _get_playable_mask(self, p1_board: int, p2_board: int) -> int:
+        """Get mask of playable positions (not blocked by gravity)."""
+        mask = 0
         for col in range(7):
-            # Find the top empty position in each column
             for row in range(6):
                 pos = row * 7 + col
-                if not (player_board & (1 << pos)) and not (opponent_board & (1 << pos)):
-                    # Check if this position is supported by a piece below (for gravity)
-                    if row == 0 or (player_board & (1 << (pos - 7))) or (opponent_board & (1 << (pos - 7))):
-                        playable_mask |= 1 << pos
-                    break  # Only the top empty position is playable
+                if not (p1_board & (1 << pos)) and not (p2_board & (1 << pos)):
+                    if row == 0 or (p1_board & (1 << (pos - 7))) or (p2_board & (1 << (pos - 7))):
+                        mask |= 1 << pos
+                    break
+        return mask
 
-        return playable_mask
-
-    def _count_non_playable_threats(self, player_board: int, opponent_board: int, playable_mask: int) -> int:
-        """Count non-playable immediate threats: ' 111', '111 ', '1 11', '11 1'."""
-        threat_count = 0
-
-        # Check horizontal patterns
-        threat_count += self._count_horizontal_patterns(player_board, opponent_board, playable_mask,
-                                                        [[1, 2, 3], [0, 1, 2], [
-                                                            0, 2, 3], [0, 1, 3]],
-                                                        [0, 3, 1, 2])
-
-        # Check diagonal patterns
-        threat_count += self._count_diagonal_patterns(player_board, opponent_board, playable_mask,
-                                                      [[1, 2, 3], [0, 1, 2], [
-                                                          0, 2, 3], [0, 1, 3]],
-                                                      [0, 3, 1, 2])
-
-        return threat_count
-
-    def _count_horizontal_patterns(self, player_board: int, opponent_board: int, playable_mask: int,
-                                   player_positions_list: list, gap_positions: list) -> int:
-        """Count horizontal patterns matching the given player positions and gap positions."""
+    def _count_threats(self, player_board: int, opponent_board: int, playable_mask: int) -> int:
+        """Count all threat patterns for a player."""
         count = 0
 
+        # Horizontal patterns
         for row in range(1, 6):
-            for col in range(4):  # Need 4 consecutive positions
-                for i, (player_positions, gap_pos) in enumerate(zip(player_positions_list, gap_positions)):
-                    if self._matches_horizontal_pattern(player_board, opponent_board, playable_mask,
-                                                        row, col, player_positions, gap_pos):
-                        count += 1
+            for col in range(4):
+                count += self._count_patterns_at_position(
+                    player_board, opponent_board, playable_mask,
+                    lambda pos: (row * 7) + col + pos, row, col
+                )
+
+        # Diagonal TL-BR patterns
+        for row in range(3):
+            for col in range(4):
+                count += self._count_patterns_at_position(
+                    player_board, opponent_board, playable_mask,
+                    lambda pos: (row + pos) * 7 + col + pos, row, col
+                )
+
+        # Diagonal TR-BL patterns
+        for row in range(3):
+            for col in range(3, 7):
+                count += self._count_patterns_at_position(
+                    player_board, opponent_board, playable_mask,
+                    lambda pos: (row + pos) * 7 + col - pos, row, col
+                )
 
         return count
 
-    def _count_diagonal_patterns(self, player_board: int, opponent_board: int, playable_mask: int,
-                                 player_positions_list: list, gap_positions: list) -> int:
-        """Count diagonal patterns matching the given player positions and gap positions."""
+    def _count_patterns_at_position(self, player_board: int, opponent_board: int,
+                                    playable_mask: int, pos_func, row: int, col: int) -> int:
+        """Count patterns at a specific position using the given position function."""
         count = 0
-
-        # Top-left to bottom-right diagonals
-        for row in range(3):
-            for col in range(4):
-                for i, (player_positions, gap_pos) in enumerate(zip(player_positions_list, gap_positions)):
-                    if self._matches_diagonal_tlbr_pattern(player_board, opponent_board, playable_mask,
-                                                           row, col, player_positions, gap_pos):
-                        count += 1
-
-        # Top-right to bottom-left diagonals
-        for row in range(3):
-            for col in range(3, 7):
-                for i, (player_positions, gap_pos) in enumerate(zip(player_positions_list, gap_positions)):
-                    if self._matches_diagonal_trbl_pattern(player_board, opponent_board, playable_mask,
-                                                           row, col, player_positions, gap_pos):
-                        count += 1
-
+        for player_positions, gap_pos in self.PATTERNS:
+            if self._matches_pattern(player_board, opponent_board, playable_mask,
+                                     pos_func, player_positions, gap_pos):
+                count += 1
         return count
 
-    def _matches_horizontal_pattern(self, player_board: int, opponent_board: int, playable_mask: int,
-                                    row: int, col: int, player_positions: list, gap_position: int) -> bool:
-        """Check if a horizontal pattern matches."""
-        # Check that player has pieces in the specified positions
+    def _matches_pattern(self, player_board: int, opponent_board: int, playable_mask: int,
+                         pos_func, player_positions: list, gap_position: int) -> bool:
+        """Check if a pattern matches at the given position."""
+        # Check player has pieces in specified positions
         for pos in player_positions:
-            check_pos = (row * 7) + col + pos
+            check_pos = pos_func(pos)
             if not (player_board & (1 << check_pos)):
                 return False
 
-        # Check that gap position is empty
-        gap_pos = (row * 7) + col + gap_position
+        # Check gap position is empty
+        gap_pos = pos_func(gap_position)
         if (player_board & (1 << gap_pos)) or (opponent_board & (1 << gap_pos)):
             return False
 
-        # For non-playable threats, gap must not be playable
-        # For build threats, gap must be playable
-        is_playable = bool(playable_mask & (1 << gap_pos))
-
-        # This is a simplified check - in practice you'd want to distinguish between
-        # non-playable threats and build threats based on the pattern type
         return True
-
-    def _matches_diagonal_tlbr_pattern(self, player_board: int, opponent_board: int, playable_mask: int,
-                                       row: int, col: int, player_positions: list, gap_position: int) -> bool:
-        """Check if a top-left to bottom-right diagonal pattern matches."""
-        # Check that player has pieces in the specified positions
-        for pos in player_positions:
-            check_pos = (row + pos) * 7 + col + pos
-            if not (player_board & (1 << check_pos)):
-                return False
-
-        # Check that gap position is empty
-        gap_pos = (row + gap_position) * 7 + col + gap_position
-        if (player_board & (1 << gap_pos)) or (opponent_board & (1 << gap_pos)):
-            return False
-
-        # For non-playable threats, gap must not be playable
-        # For build threats, gap must be playable
-        is_playable = bool(playable_mask & (1 << gap_pos))
-
-        return True
-
-    def _matches_diagonal_trbl_pattern(self, player_board: int, opponent_board: int, playable_mask: int,
-                                       row: int, col: int, player_positions: list, gap_position: int) -> bool:
-        """Check if a top-right to bottom-left diagonal pattern matches."""
-        # Check that player has pieces in the specified positions
-        for pos in player_positions:
-            check_pos = (row + pos) * 7 + col - pos
-            if not (player_board & (1 << check_pos)):
-                return False
-
-        # Check that gap position is empty
-        gap_pos = (row + gap_position) * 7 + col - gap_position
-        if (player_board & (1 << gap_pos)) or (opponent_board & (1 << gap_pos)):
-            return False
-
-        # For non-playable threats, gap must not be playable
-        # For build threats, gap must be playable
-        is_playable = bool(playable_mask & (1 << gap_pos))
-
-        return True
-
-    def _compute_win_masks(self):
-        """Precompute all possible 4-in-a-row patterns."""
-        masks = []
-
-        # Horizontal masks
-        for row in range(6):
-            for col in range(4):
-                mask = 0
-                for i in range(4):
-                    mask |= 1 << (row * 7 + col + i)
-                masks.append(mask)
-
-        # Diagonal masks (top-left to bottom-right)
-        for row in range(3):
-            for col in range(4):
-                mask = 0
-                for i in range(4):
-                    mask |= 1 << ((row + i) * 7 + col + i)
-                masks.append(mask)
-
-        # Diagonal masks (top-right to bottom-left)
-        for row in range(3):
-            for col in range(3, 7):
-                mask = 0
-                for i in range(4):
-                    mask |= 1 << ((row + i) * 7 + col - i)
-                masks.append(mask)
-
-        return masks

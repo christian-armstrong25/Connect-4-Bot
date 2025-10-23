@@ -6,29 +6,18 @@ from connect4_engine import Bot, GameBoard, Player
 
 
 class BaseMinimaxBot(Bot):
-    """Ultra-optimized base class for minimax bots."""
 
     def __init__(self, evaluator_name: str = "old"):
         from Board_Evals.eval_factory import create_evaluator
         self.evaluator = create_evaluator(evaluator_name)
-        self.nodes_evaluated = 0
 
     def minimax(self, board: GameBoard, player: Player, depth: int,
                 alpha: float = float('-inf'), beta: float = float('inf'),
                 deadline: float = None) -> tuple[float, int]:
-        """Ultra-fast minimax with alpha-beta pruning and time management."""
 
         # Terminal conditions
         if depth == 0 or board.is_full() or (deadline and time.perf_counter() >= deadline):
             return self.evaluator.evaluate_board(board, player), None
-
-        # Check for immediate wins
-        if board.check_win(player):
-            return 1000000 if player == Player.PLAYER1 else -1000000, None
-
-        opponent = Player.PLAYER2 if player == Player.PLAYER1 else Player.PLAYER1
-        if board.check_win(opponent):
-            return -1000000 if player == Player.PLAYER1 else 1000000, None
 
         moves = board.get_valid_moves()
         if not moves:
@@ -41,9 +30,9 @@ class BaseMinimaxBot(Bot):
         for move in moves:
             # Make move
             board.make_move(move, player)
-            self.nodes_evaluated += 1
 
             # Recursive call
+            opponent = Player.PLAYER2 if player == Player.PLAYER1 else Player.PLAYER1
             score, _ = self.minimax(
                 board, opponent, depth - 1, alpha, beta, deadline)
 
