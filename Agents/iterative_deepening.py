@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Iterative deepening minimax bot with time management."""
+"""Iterative deepening negamax bot with time management."""
 
 import time
 from connect4_engine import GameBoard, Player
-from .base_bot import BaseMinimaxBot
+from .base_bot import BaseNegamaxBot
 
 
-class IterativeDeepeningBot(BaseMinimaxBot):
+class IterativeDeepeningBot(BaseNegamaxBot):
     """Iterative deepening bot that uses available time efficiently."""
 
     def __init__(self, evaluator_name: str = "old"):
@@ -23,7 +23,7 @@ class IterativeDeepeningBot(BaseMinimaxBot):
         depth = 1
 
         while True:
-            _, move = self.minimax(board, player, depth, deadline=deadline)
+            _, move = self.negamax(board, player, depth, deadline=deadline)
             if move is None:
                 return best_move
 
