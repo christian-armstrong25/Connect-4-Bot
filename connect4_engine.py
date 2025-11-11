@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-"""
-Connect 4 Engine with bitboard representation.
-"""
+"""Connect 4 Engine with bitboard representation."""
 
-import sys
 import struct
-import os
-from typing import List
+import sys
 from enum import IntEnum
-
-sys.path.append(os.path.dirname(__file__))
+from typing import List
 
 
 class Player(IntEnum):
@@ -51,9 +46,10 @@ class GameBoard:
     def _compute_win_masks(self) -> List[int]:
         """Precompute all possible 4-in-a-row patterns."""
         masks = []
+        patterns = [(0, 6, 0, 4, 0, 1), (0, 3, 0, 7, 1, 0),
+                    (0, 3, 0, 4, 1, 1), (0, 3, 3, 7, 1, -1)]
 
-        # Helper function to create masks
-        def add_masks(row_start, row_end, col_start, col_end, row_delta, col_delta):
+        for row_start, row_end, col_start, col_end, row_delta, col_delta in patterns:
             for row in range(row_start, row_end):
                 for col in range(col_start, col_end):
                     mask = 0
@@ -61,12 +57,6 @@ class GameBoard:
                         mask |= 1 << ((row + i * row_delta) *
                                       7 + col + i * col_delta)
                     masks.append(mask)
-
-        add_masks(0, 6, 0, 4, 0, 1)  # Horizontal
-        add_masks(0, 3, 0, 7, 1, 0)  # Vertical
-        add_masks(0, 3, 0, 4, 1, 1)  # Diagonal TL-BR
-        add_masks(0, 3, 3, 7, 1, -1)  # Diagonal TR-BL
-
         return masks
 
     def make_move(self, column: int, player: Player) -> bool:
@@ -133,14 +123,13 @@ class SimpleEngine:
 
     def _create_agent(self, agent_class_name: str, evaluator_name: str):
         """Create agent with evaluator selection."""
-        if agent_class_name == "MinimaxBot":
-            from Agents.minimax import MinimaxBot
-            return MinimaxBot(evaluator_name)
-        elif agent_class_name == "IterativeDeepeningBot":
-            from Agents.iterative_deepening import IterativeDeepeningBot
-            return IterativeDeepeningBot(evaluator_name)
-        else:
+        from Agents.iterative_deepening import IterativeDeepeningBot
+        from Agents.minimax import MinimaxBot
+        agents = {"MinimaxBot": MinimaxBot,
+                  "IterativeDeepeningBot": IterativeDeepeningBot}
+        if agent_class_name not in agents:
             raise ValueError(f"Unknown agent class: {agent_class_name}")
+        return agents[agent_class_name](evaluator_name)
 
     def _send_move(self, column: int):
         """Send move response."""
@@ -151,82 +140,61 @@ class SimpleEngine:
 
     def _handle_game_start(self, data: bytes):
         """Handle game start message."""
-        offset = 3
-        self.my_player = Player.PLAYER1 if data[offset] == ord(
+        self.my_player = Player.PLAYER1 if data[3] == ord(
             '1') else Player.PLAYER2
-        offset += 1
+        self.time_per_move = struct.unpack('<I', data[4:8])[0]
+        num_moves = data[8]
+        moves = list(data[9:9+num_moves]) if num_moves > 0 else []
 
-        self.time_per_move = struct.unpack('<I', data[offset:offset+4])[0]
-        offset += 4
-
-        num_moves = data[offset]
-        moves = list(data[offset+1:offset+1+num_moves]
-                     ) if num_moves > 0 else []
-
+        self.board = GameBoard()
         if moves:
             self.board.reconstruct_from_moves(moves)
-        else:
-            self.board = GameBoard()
-
         if self.my_player == Player.PLAYER1:
             self._make_and_send_move()
 
     def _handle_make_move(self, data: bytes):
         """Handle opponent's move and respond."""
-        opponent_move = data[3]
         opponent = Player.PLAYER2 if self.my_player == Player.PLAYER1 else Player.PLAYER1
-        self.board.make_move(opponent_move, opponent)
+        self.board.make_move(data[3], opponent)
         self._make_and_send_move()
 
     def _make_and_send_move(self):
         """Make a move and send it."""
         move = self.agent.calculate_move(
             self.board, self.my_player, self.time_per_move)
-        if move is not None and self.board.is_valid_move(move):
-            self.board.make_move(move, self.my_player)
-            self._send_move(move)
-        else:
+        if move is None or not self.board.make_move(move, self.my_player):
             sys.exit(1)
+        self._send_move(move)
 
     def run(self):
         """Main engine loop."""
         try:
+            handlers = {0: self._handle_game_start, 1: self._handle_make_move}
             while True:
                 header_data = sys.stdin.buffer.read(3)
                 if len(header_data) < 3:
                     break
-
                 msg_type, msg_length = struct.unpack('<BH', header_data)
                 remaining_data = sys.stdin.buffer.read(msg_length - 3)
                 if len(remaining_data) < (msg_length - 3):
                     break
-
-                full_message = header_data + remaining_data
-
-                if msg_type == 0:
-                    self._handle_game_start(full_message)
-                elif msg_type == 1:
-                    self._handle_make_move(full_message)
-                else:
+                if msg_type not in handlers:
                     break
+                handlers[msg_type](header_data + remaining_data)
         except (KeyboardInterrupt, Exception):
             sys.exit(1)
 
 
 def main():
-    if len(sys.argv) < 2 or len(sys.argv) > 3:
+    if not (2 <= len(sys.argv) <= 3):
         print(
             "Usage: python3 connect4_engine.py <agent_class_name> [evaluator_name]")
         print("Available agents: MinimaxBot, IterativeDeepeningBot")
         print("Available evaluators: old, new")
         sys.exit(1)
-
-    agent_class_name = sys.argv[1]
-    evaluator_name = sys.argv[2] if len(sys.argv) == 3 else "old"
-
     try:
-        engine = SimpleEngine(agent_class_name, evaluator_name)
-        engine.run()
+        SimpleEngine(sys.argv[1], sys.argv[2] if len(
+            sys.argv) == 3 else "old").run()
     except Exception:
         sys.exit(1)
 
