@@ -14,8 +14,7 @@ class MinimaxBot(BaseNegamaxBot):
     SEARCH_DEPTH = 4
 
     def calculate_move(self, board: GameBoard, player: Player, time_per_move: int) -> int:
-        deadline = time.perf_counter() + (time_per_move / 1000.0)
         _, move = self.negamax(
-            board, player, self.SEARCH_DEPTH, deadline=deadline)
+            board, player, self.SEARCH_DEPTH)
 
         return move

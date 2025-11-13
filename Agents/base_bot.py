@@ -11,9 +11,10 @@ to eliminate branches that cannot improve the result.
 
 import time
 from typing import Optional, Tuple
-from connect4_engine import Bot, GameBoard, Player
-from Board_Evals.eval_old import BoardEvaluator as OldEvaluator
+
 from Board_Evals.eval_new import BoardEvaluator as NewEvaluator
+from Board_Evals.eval_old import BoardEvaluator as OldEvaluator
+from connect4_engine import Bot, GameBoard, Player
 
 
 class BaseNegamaxBot(Bot):
@@ -28,13 +29,11 @@ class BaseNegamaxBot(Bot):
                 first_move: Optional[int] = None) -> Tuple[float, Optional[int]]:
 
         if depth == 0 or board.is_full():
-            score = self.evaluator.evaluate_board(board, player)
+            score = self.evaluator.evaluate_board(board)
             # Negate score for Player 2 (since evaluator returns from P1's perspective)
             return (-score if player == Player.PLAYER2 else score, None)
 
         moves = board.get_valid_moves()
-        if not moves:
-            return 0, None
 
         # Principal Variation (PV) move ordering: try the best move from previous
         # iteration first, as it's likely to be good in this iteration too
@@ -52,7 +51,6 @@ class BaseNegamaxBot(Bot):
 
             # Make move and search recursively
             board.make_move(move, player)
-            # Negate score because we're switching to opponent's perspective
             score = -self.negamax(board, opponent, depth - 1,
                                   -beta, -alpha, deadline, None)[0]
             board.undo_move(move, player)

@@ -13,7 +13,7 @@ from .base_bot import BaseNegamaxBot
 
 class IterativeDeepeningBot(BaseNegamaxBot):
     # Set a small buffer to ensure we finish search before deadline
-    TIME_BUFFER_MS = 0.3
+    TIME_BUFFER_MS = 0.15
 
     def calculate_move(self, board: GameBoard, player: Player, time_per_move: int) -> int:
         deadline = time.perf_counter() + (time_per_move - self.TIME_BUFFER_MS) / 1000.0

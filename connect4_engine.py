@@ -40,11 +40,17 @@ class GameBoard:
     _DIAGONAL_DOWN_SHIFT = 8   # Move up-right: +1 row (+7) + 1 col (+1) = +8
     _DIAGONAL_UP_SHIFT = 6     # Move up-left: +1 row (+7) - 1 col (-1) = +6
 
-    # Masks to prevent false positives from bit wrapping (currently unused but kept for reference)
-    _HORIZONTAL_MASK = 0x3F3F3F3F3F3F3F  # 6 bits per row, 7 rows
-    _VERTICAL_MASK = 0x1FFFFF            # 21 bits (6 rows * 7 cols - 1)
-    _DIAGONAL_DOWN_MASK = 0x1FFFFF
-    _DIAGONAL_UP_MASK = 0x1FFFFF
+    # Valid board positions: bits 0-41 (42 bits total for 6x7 board)
+    _VALID_MASK = (1 << 42) - 1
+    # Masks to prevent false positives from bit wrapping
+    # Horizontal: all rows (0-5), columns 0-3 (where 4-in-a-row can start)
+    _HORIZONTAL_MASK = 0x78F1E3C78F & _VALID_MASK
+    # Vertical: rows 0-2 (bits 0-20), all columns (where 4-in-a-row can start)
+    _VERTICAL_MASK = 0x1FFFFF  # Bits 0-20 (rows 0-2), prevents row wrap
+    # Diagonal down: rows 0-2, columns 0-3 (where 4-in-a-row can start)
+    _DIAGONAL_DOWN_MASK = 0x3C78F & _VALID_MASK
+    # Diagonal up: rows 0-2, columns 3-6 (where 4-in-a-row can start)
+    _DIAGONAL_UP_MASK = 0x1E3C78 & _VALID_MASK
 
     def __init__(self):
         """Initialize an empty Connect 4 board."""
@@ -67,7 +73,6 @@ class GameBoard:
             String showing the board with 'X' for Player 1, 'O' for Player 2,
             and '.' for empty spaces. Rows are displayed top to bottom.
         """
-        result = []
         # Pre-allocate list with known size (6 rows + separator + column numbers)
         result = [None] * (self.rows + 2)
         idx = 0
@@ -160,38 +165,26 @@ class GameBoard:
             True if player has 4 pieces in a row (horizontal, vertical, or diagonal)
         """
         board = self.boards[player - 1]
-        # Valid board positions: bits 0-41 (42 bits total for 6x7 board)
-        VALID_MASK = (1 << 42) - 1
 
         # Check horizontal: shift by 1 (move right one column)
         # Check for 4 consecutive: board & (board>>1) & (board>>2) & (board>>3)
-        # Mask prevents wrapping from column 6 to column 0 of next row
-        # 0x3F = 0b111111 (6 bits), applied to each row
-        horizontal_mask = 0x3F3F3F3F3F3F3F & VALID_MASK
-        if board & (board >> 1) & (board >> 2) & (board >> 3) & horizontal_mask:
+        if board & (board >> 1) & (board >> 2) & (board >> 3) & self._HORIZONTAL_MASK:
             return True
 
         # Check vertical: shift by 7 (move up one row)
         # Check for 4 consecutive vertically
         # Only check bottom 3 rows (rows 0-2) since that's where 4-in-a-row can start
-        vertical_mask = 0x1FFFFF  # Bits 0-20 (rows 0-2)
-        if board & (board >> 7) & (board >> 14) & (board >> 21) & vertical_mask:
+        if board & (board >> 7) & (board >> 14) & (board >> 21) & self._VERTICAL_MASK:
             return True
 
         # Check diagonal down (\): shift by 8 (move up-right: +1 row, +1 col)
         # Only check positions that can form valid diagonals (cols 0-3, rows 0-2)
-        # Mask allows cols 0-3 in rows 0-2: 0x0F0F0F (4 bits per row for 3 rows)
-        diagonal_down_mask = 0x0F0F0F & VALID_MASK
-        if board & (board >> 8) & (board >> 16) & (board >> 24) & diagonal_down_mask:
+        if board & (board >> 8) & (board >> 16) & (board >> 24) & self._DIAGONAL_DOWN_MASK:
             return True
 
         # Check diagonal up (/): shift by 6 (move up-left: +1 row, -1 col)
         # Only check positions that can form valid diagonals (cols 3-6, rows 0-2)
-        # Mask allows cols 3-6 in rows 0-2: need to construct this carefully
-        # Row 0: bits 3-6, Row 1: bits 10-13, Row 2: bits 17-20
-        # This is: 0b1111000 1111000 1111000 = 0x787878
-        diagonal_up_mask = 0x787878 & VALID_MASK
-        if board & (board >> 6) & (board >> 12) & (board >> 18) & diagonal_up_mask:
+        if board & (board >> 6) & (board >> 12) & (board >> 18) & self._DIAGONAL_UP_MASK:
             return True
 
         return False
@@ -349,9 +342,14 @@ class SimpleEngine:
         moves = list(data[9:9+num_moves]) if num_moves > 0 else []
 
         # Reconstruct board from initial moves
-        self.board = GameBoard()
         if moves:
             self.board.reconstruct_from_moves(moves)
+        else:
+            # Reset board to empty state if no moves
+            self.board.boards = [0, 0]
+            self.board.heights = [0] * 7
+            self.board.move_count = 0
+            self.board._valid_moves_cache = None
 
         # If we're player 1, we move first
         if self.my_player == Player.PLAYER1:

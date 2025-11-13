@@ -2,8 +2,9 @@ from connect4_engine import GameBoard, Player
 
 
 class BoardEvaluator:
-    WIN_SCORE = float('inf')
-    THREAT_SCORE = 250
+    # Use a large finite number so move_count adjustments actually matter
+    WIN_SCORE = 100
+    THREAT_SCORE = 1
 
     # Pattern definitions: (player_positions, gap_position)
     PATTERNS = [
@@ -13,11 +14,11 @@ class BoardEvaluator:
         ((0, 1, 3), 2),  # '11 1'
     ]
 
-    def evaluate_board(self, board: GameBoard, current_player=None) -> float:
+    def evaluate_board(self, board: GameBoard) -> float:
         if board.check_win(Player.PLAYER1):
-            return self.WIN_SCORE
+            return self.WIN_SCORE - board.move_count
         if board.check_win(Player.PLAYER2):
-            return -self.WIN_SCORE
+            return -self.WIN_SCORE + board.move_count
         return self._evaluate_position(board)
 
     def _evaluate_position(self, board: GameBoard) -> float:
@@ -26,40 +27,12 @@ class BoardEvaluator:
         # Precompute occupied positions (used multiple times, so cache it)
         occupied = p1_board | p2_board
 
-        # Get mask of playable positions (positions that can be played next)
-        playable_mask = self._get_playable_mask(p1_board, p2_board, occupied)
-
         # Count threats for both players
-        p1_threats = self._count_threats(
-            p1_board, p2_board, playable_mask, occupied)
-        p2_threats = self._count_threats(
-            p2_board, p1_board, playable_mask, occupied)
+        p1_threats = self._count_threats(p1_board, occupied)
+        p2_threats = self._count_threats(p2_board, occupied)
         return (p1_threats - p2_threats) * self.THREAT_SCORE
 
-    def _get_playable_mask(self, p1_board: int, p2_board: int, occupied: int) -> int:
-        mask = 0
-        for col in range(7):
-            # Find the first empty position in this column (from bottom up)
-            for row in range(6):
-                pos = row * 7 + col
-                bit = 1 << pos
-
-                if not (occupied & bit):  # Position is empty
-                    # Check if position is playable
-                    if row == 0:
-                        # Bottom row is always playable
-                        mask |= bit
-                    else:
-                        # Check if there's a piece below (required for gravity)
-                        below_pos = pos - 7
-                        if occupied & (1 << below_pos):
-                            mask |= bit
-                    break  # Found first empty, move to next column
-
-        return mask
-
-    def _count_threats(self, player_board: int, opponent_board: int,
-                       playable_mask: int, occupied: int) -> int:
+    def _count_threats(self, player_board: int, occupied: int) -> int:
         count = 0
 
         # Check horizontal threats (rows 1-5, columns 0-3)
@@ -69,7 +42,7 @@ class BoardEvaluator:
             for col in range(4):  # Can fit 4 positions starting from col 0-3
                 base_pos = row_base + col
                 count += self._count_patterns_horizontal(
-                    player_board, opponent_board, playable_mask, occupied, base_pos
+                    player_board, occupied, base_pos
                 )
 
         # Check diagonal down threats (\): top-left to bottom-right
@@ -78,7 +51,7 @@ class BoardEvaluator:
             for col in range(4):  # Can fit 4 positions starting from cols 0-3
                 base_pos = row * 7 + col
                 count += self._count_patterns_diagonal_down(
-                    player_board, opponent_board, playable_mask, occupied, base_pos
+                    player_board, occupied, base_pos
                 )
 
         # Check diagonal up threats (/): top-right to bottom-left
@@ -87,13 +60,12 @@ class BoardEvaluator:
             for col in range(3, 7):  # Can fit 4 positions starting from cols 3-6
                 base_pos = row * 7 + col
                 count += self._count_patterns_diagonal_up(
-                    player_board, opponent_board, playable_mask, occupied, base_pos
+                    player_board, occupied, base_pos
                 )
 
         return count
 
-    def _count_patterns_horizontal(self, player_board: int, opponent_board: int,
-                                   playable_mask: int, occupied: int, base_pos: int) -> int:
+    def _count_patterns_horizontal(self, player_board: int, occupied: int, base_pos: int) -> int:
         """Count patterns in horizontal direction."""
         count = 0
 
@@ -114,9 +86,8 @@ class BoardEvaluator:
 
         return count
 
-    def _count_patterns_diagonal_down(self, player_board: int, opponent_board: int,
-                                      playable_mask: int, occupied: int, base_pos: int) -> int:
-        """Count patterns in diagonal down direction (\)."""
+    def _count_patterns_diagonal_down(self, player_board: int, occupied: int, base_pos: int) -> int:
+        """Count patterns in diagonal down direction (top-left to bottom-right)."""
         count = 0
 
         for player_positions, gap_pos in self.PATTERNS:
@@ -133,9 +104,8 @@ class BoardEvaluator:
 
         return count
 
-    def _count_patterns_diagonal_up(self, player_board: int, opponent_board: int,
-                                    playable_mask: int, occupied: int, base_pos: int) -> int:
-        """Count patterns in diagonal up direction (/)."""
+    def _count_patterns_diagonal_up(self, player_board: int, occupied: int, base_pos: int) -> int:
+        """Count patterns in diagonal up direction (top-right to bottom-left)."""
         count = 0
 
         for player_positions, gap_pos in self.PATTERNS:
