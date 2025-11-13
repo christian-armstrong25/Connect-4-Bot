@@ -7,24 +7,32 @@ available time effectively.
 """
 
 import time
+from typing import Optional
 from connect4_engine import GameBoard, Player
-from .base_bot import BaseNegamaxBot
+from Board_Evals.eval_new import BoardEvaluator as NewEvaluator
+from Board_Evals.eval_old import BoardEvaluator as OldEvaluator
+from util import negamax
 
 
-class IterativeDeepeningBot(BaseNegamaxBot):
+class IterativeDeepeningBot:
     # Set a small buffer to ensure we finish search before deadline
     TIME_BUFFER_MS = 0.15
+
+    def __init__(self, evaluator_name: str = "old"):
+        evaluators = {"old": OldEvaluator,
+                      "new": NewEvaluator}
+        self.evaluator = evaluators[evaluator_name]()
 
     def calculate_move(self, board: GameBoard, player: Player, time_per_move: int) -> int:
         deadline = time.perf_counter() + (time_per_move - self.TIME_BUFFER_MS) / 1000.0
 
-        best_move: int = None
+        best_move: Optional[int] = None
         depth = 1
 
         while True:
             # Search using best_move from previous iteration for move ordering
-            _, move = self.negamax(
-                board, player, depth,
+            _, move = negamax(
+                board, player, depth, self.evaluator,
                 deadline=deadline,
                 first_move=best_move
             )

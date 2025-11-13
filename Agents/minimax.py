@@ -5,16 +5,22 @@ A simple bot that uses fixed-depth minimax search (via negamax) to find the best
 This bot searches to a fixed depth of 4, regardless of time available.
 """
 
-import time
+from Board_Evals.eval_new import BoardEvaluator as NewEvaluator
+from Board_Evals.eval_old import BoardEvaluator as OldEvaluator
 from connect4_engine import GameBoard, Player
-from .base_bot import BaseNegamaxBot
+from util import negamax
 
 
-class MinimaxBot(BaseNegamaxBot):
+class MinimaxBot:
     SEARCH_DEPTH = 4
 
+    def __init__(self, evaluator_name: str = "old"):
+        evaluators = {"old": OldEvaluator,
+                      "new": NewEvaluator}
+        self.evaluator = evaluators[evaluator_name]()
+
     def calculate_move(self, board: GameBoard, player: Player, time_per_move: int) -> int:
-        _, move = self.negamax(
-            board, player, self.SEARCH_DEPTH)
+        _, move = negamax(
+            board, player, self.SEARCH_DEPTH, self.evaluator)
 
         return move

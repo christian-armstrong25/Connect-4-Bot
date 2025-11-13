@@ -1,7 +1,7 @@
 import struct
 import sys
 from enum import IntEnum
-from typing import List, Optional
+from typing import Any, List, Optional
 
 
 class Player(IntEnum):
@@ -229,32 +229,6 @@ class GameBoard:
             self.make_move(move, current_player)
 
 
-class Bot:
-    """
-    Abstract base class for Connect 4 AI agents.
-
-    All AI bots must implement the calculate_move method to determine
-    which column to play in given the current board state.
-    """
-
-    def calculate_move(self, board: GameBoard, player: Player, time_per_move: int) -> int:
-        """
-        Calculate the best move for the given player.
-
-        Args:
-            board: Current game board state
-            player: Player making the move
-            time_per_move: Time limit in milliseconds for move calculation
-
-        Returns:
-            Column index (0-6) where the player should move
-
-        Raises:
-            NotImplementedError: Must be implemented by subclasses
-        """
-        raise NotImplementedError("Subclasses must implement calculate_move()")
-
-
 class SimpleEngine:
     """
     Connect 4 game engine that handles communication protocol and game flow.
@@ -279,7 +253,7 @@ class SimpleEngine:
         self.time_per_move = 5000  # Default 5 seconds per move
         self.agent = self._create_agent(agent_class_name, evaluator_name)
 
-    def _create_agent(self, agent_class_name: str, evaluator_name: str) -> Bot:
+    def _create_agent(self, agent_class_name: str, evaluator_name: str) -> Any:
         """
         Create and return an AI agent instance.
 
@@ -288,7 +262,7 @@ class SimpleEngine:
             evaluator_name: Name of the board evaluator to use
 
         Returns:
-            Bot instance of the requested type
+            AI agent instance of the requested type
 
         Raises:
             ValueError: If agent_class_name is not recognized
