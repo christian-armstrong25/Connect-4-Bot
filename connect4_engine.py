@@ -52,6 +52,12 @@ class GameBoard:
     # Diagonal up: rows 0-2, columns 3-6 (where 4-in-a-row can start)
     _DIAGONAL_UP_MASK = 0x1E3C78 & _VALID_MASK
 
+    # Column order prioritizing center columns (better moves in Connect 4)
+    # Center first, then outward
+    _COLUMN_ORDER = [3, 2, 4, 1, 5, 0, 6]
+    # Dictionary mapping column -> order index for O(1) lookups
+    _COLUMN_ORDER_MAP = {col: idx for idx, col in enumerate(_COLUMN_ORDER)}
+
     def __init__(self):
         """Initialize an empty Connect 4 board."""
         self.rows, self.cols = 6, 7
@@ -59,11 +65,10 @@ class GameBoard:
         # Track height of each column (0-6) for O(1) move validation
         self.heights = [0] * 7
         self.move_count = 0
-        # Cache for valid moves to avoid recomputation (invalidated on make_move/undo_move)
-        self._valid_moves_cache: Optional[List[int]] = None
+        # Maintain list of valid columns (columns that aren't full)
         # Column order prioritizing center columns (better moves in Connect 4)
         # Center first, then outward
-        self._column_order = [3, 2, 4, 1, 5, 0, 6]
+        self._valid_columns = list(GameBoard._COLUMN_ORDER)
 
     def __str__(self) -> str:
         """
@@ -124,8 +129,9 @@ class GameBoard:
         self.heights[column] += 1
         self.move_count += 1
 
-        # Invalidate cached valid moves since board state changed
-        self._valid_moves_cache = None
+        # If column is now full, remove it from valid columns list
+        if self.heights[column] == 6:
+            self._valid_columns.remove(column)
         return True
 
     def is_valid_move(self, column: int) -> bool:
@@ -135,14 +141,8 @@ class GameBoard:
         """
         Returns playable columns ordered by center preference heuristic
         """
-        # Return cached result if available
-        if self._valid_moves_cache is not None:
-            return self._valid_moves_cache
-
-        # Filter columns that aren't full, maintaining center-first order
-        valid = [col for col in self._column_order if self.heights[col] < 6]
-        self._valid_moves_cache = valid
-        return valid
+        # Return the maintained list of valid columns directly
+        return self._valid_columns
 
     def check_win(self, player: Player) -> bool:
         """
@@ -164,10 +164,23 @@ class GameBoard:
         Returns:
             True if player has 4 pieces in a row (horizontal, vertical, or diagonal)
         """
+        # if no one has even played 4 pieces, there cannot be a 4 in a row
         if self.move_count < 7:
             return False
 
         board = self.boards[player - 1]
+
+        # order matters, vertical wins are rare while diagonals are the most common
+
+        # Check diagonal down (\): shift by 8 (move up-right: +1 row, +1 col)
+        # Only check positions that can form valid diagonals (cols 0-3, rows 0-2)
+        if board & (board >> 8) & (board >> 16) & (board >> 24) & self._DIAGONAL_DOWN_MASK:
+            return True
+
+        # Check diagonal up (/): shift by 6 (move up-left: +1 row, -1 col)
+        # Only check positions that can form valid diagonals (cols 3-6, rows 0-2)
+        if board & (board >> 6) & (board >> 12) & (board >> 18) & self._DIAGONAL_UP_MASK:
+            return True
 
         # Check horizontal: shift by 1 (move right one column)
         # Check for 4 consecutive: board & (board>>1) & (board>>2) & (board>>3)
@@ -178,16 +191,6 @@ class GameBoard:
         # Check for 4 consecutive vertically
         # Only check bottom 3 rows (rows 0-2) since that's where 4-in-a-row can start
         if board & (board >> 7) & (board >> 14) & (board >> 21) & self._VERTICAL_MASK:
-            return True
-
-        # Check diagonal down (\): shift by 8 (move up-right: +1 row, +1 col)
-        # Only check positions that can form valid diagonals (cols 0-3, rows 0-2)
-        if board & (board >> 8) & (board >> 16) & (board >> 24) & self._DIAGONAL_DOWN_MASK:
-            return True
-
-        # Check diagonal up (/): shift by 6 (move up-left: +1 row, -1 col)
-        # Only check positions that can form valid diagonals (cols 3-6, rows 0-2)
-        if board & (board >> 6) & (board >> 12) & (board >> 18) & self._DIAGONAL_UP_MASK:
             return True
 
         return False
@@ -210,8 +213,19 @@ class GameBoard:
         self.boards[player - 1] &= ~(1 << pos)
 
         self.move_count -= 1
-        # Invalidate cached valid moves since board state changed
-        self._valid_moves_cache = None
+
+        # If column was full and is now available again, add it back in correct position
+        # Column just became available (was 6, now 5)
+        if self.heights[column] == 5:
+            # Get order index for this column (O(1) lookup)
+            column_order_idx = GameBoard._COLUMN_ORDER_MAP[column]
+            # Find where to insert it in _valid_columns to maintain center-first order
+            insert_idx = len(self._valid_columns)
+            for i, valid_col in enumerate(self._valid_columns):
+                if GameBoard._COLUMN_ORDER_MAP[valid_col] > column_order_idx:
+                    insert_idx = i
+                    break
+            self._valid_columns.insert(insert_idx, column)
 
     def reconstruct_from_moves(self, moves: List[int]) -> None:
         """
@@ -224,7 +238,7 @@ class GameBoard:
         self.boards = [0, 0]
         self.heights = [0] * 7
         self.move_count = 0
-        self._valid_moves_cache = None
+        self._valid_columns = list(GameBoard._COLUMN_ORDER)
 
         # Apply each move, alternating players
         for i, move in enumerate(moves):
@@ -326,7 +340,7 @@ class SimpleEngine:
             self.board.boards = [0, 0]
             self.board.heights = [0] * 7
             self.board.move_count = 0
-            self.board._valid_moves_cache = None
+            self.board._valid_columns = list(GameBoard._COLUMN_ORDER)
 
         # If we're player 1, we move first
         if self.my_player == Player.PLAYER1:

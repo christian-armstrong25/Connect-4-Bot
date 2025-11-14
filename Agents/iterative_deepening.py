@@ -16,7 +16,7 @@ from utils.negamax import negamax
 
 class IterativeDeepeningBot:
     # Set a small buffer to ensure we finish search before deadline
-    TIME_BUFFER_MS = 0.25
+    TIME_BUFFER_MS = 0.15
 
     def __init__(self, evaluator_name: str = "old"):
         evaluators = {"old": OldEvaluator,
