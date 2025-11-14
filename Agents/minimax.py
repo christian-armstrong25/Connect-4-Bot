@@ -1,13 +1,6 @@
-"""
-Minimax Bot Implementation
-
-A simple bot that uses fixed-depth minimax search (via negamax) to find the best move.
-This bot searches to a fixed depth of 4, regardless of time available.
-"""
-
 from Board_Evals.eval_new import BoardEvaluator as NewEvaluator
 from Board_Evals.eval_old import BoardEvaluator as OldEvaluator
-from connect4_engine import GameBoard, Player
+from engine import GameBoard, Player
 from utils.negamax import negamax
 
 

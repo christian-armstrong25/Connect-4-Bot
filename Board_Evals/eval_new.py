@@ -1,4 +1,4 @@
-from connect4_engine import GameBoard, Player
+from engine import GameBoard
 
 
 class BoardEvaluator:

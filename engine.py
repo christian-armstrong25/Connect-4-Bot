@@ -11,26 +11,9 @@ class Player(IntEnum):
 
 class GameBoard:
     """
-    Connect 4 game board using bitboards for efficient representation.
-
     The board is represented as two 64-bit integers (bitboards), one for each player.
     Each bit represents a position on the 6x7 board, with bit 0 being the bottom-left
     corner and bits increasing left-to-right, then bottom-to-top.
-
-    Example bit layout (6 rows x 7 cols = 42 bits):
-        Row 5: bits 35-41
-        Row 4: bits 28-34
-        Row 3: bits 21-27
-        Row 2: bits 14-20
-        Row 1: bits 7-13
-        Row 0: bits 0-6
-
-    Attributes:
-        rows: Number of rows (6)
-        cols: Number of columns (7)
-        boards: List of two bitboards [player1_board, player2_board]
-        heights: List of 7 integers tracking the height of each column
-        move_count: Total number of moves made
     """
 
     # Bit shift amounts for win detection in each direction
@@ -61,10 +44,10 @@ class GameBoard:
     def __init__(self):
         """Initialize an empty Connect 4 board."""
         self.rows, self.cols = 6, 7
+        self.move_count = 0
         self.boards = [0, 0]  # [player1_bitboard, player2_bitboard]
         # Track height of each column (0-6) for O(1) move validation
         self.heights = [0] * 7
-        self.move_count = 0
         # Maintain list of valid columns (columns that aren't full)
         # Column order prioritizing center columns (better moves in Connect 4)
         # Center first, then outward
@@ -105,24 +88,14 @@ class GameBoard:
         return "\n".join(result)
 
     def make_move(self, column: int, player: Player) -> bool:
-        """
-        Place a piece in the specified column for the given player.
-
-        Args:
-            column: Column index (0-6)
-            player: Player making the move (Player.PLAYER1 or Player.PLAYER2)
-
-        Returns:
-            True if move was successful, False if invalid
-        """
-        if not self.is_valid_move(column):
+        # Check if move is valid
+        if not (0 <= column < 7 and self.heights[column] < 6):
             return False
 
-        # Calculate bit position: row = height, col = column
-        # Position = row * 7 + column
+        # Calculate position in bitboard
         pos = self.heights[column] * 7 + column
 
-        # Set the bit for this player's board
+        # Set bit for player bitboard
         self.boards[player - 1] |= 1 << pos
 
         # Update column height and move count
@@ -134,22 +107,38 @@ class GameBoard:
             self._valid_columns.remove(column)
         return True
 
-    def is_valid_move(self, column: int) -> bool:
-        return 0 <= column < 7 and self.heights[column] < 6
+    def undo_move(self, column: int, player: Player) -> None:
+        was_full = self.heights[column] == 6
+        self.heights[column] -= 1
+        pos = self.heights[column] * 7 + column
+
+        # Clear the bit for this player's board using bitwise AND with NOT
+        self.boards[player - 1] &= ~(1 << pos)
+
+        self.move_count -= 1
+
+        # If column was full and is now available again, add it back in correct position
+        # Column just became available (was 6, now 5)
+        if was_full:
+            # Get order index for this column (O(1) lookup)
+            column_order_idx = GameBoard._COLUMN_ORDER_MAP[column]
+            # Find where to insert it in _valid_columns to maintain center-first order
+            insert_idx = len(self._valid_columns)
+            for i, valid_col in enumerate(self._valid_columns):
+                if GameBoard._COLUMN_ORDER_MAP[valid_col] > column_order_idx:
+                    insert_idx = i
+                    break
+            self._valid_columns.insert(insert_idx, column)
 
     def get_valid_moves(self) -> List[int]:
-        """
-        Returns playable columns ordered by center preference heuristic
-        """
-        # Return the maintained list of valid columns directly
         return self._valid_columns
+
+    def is_full(self) -> bool:
+        return self.move_count >= 42
 
     def check_win(self, player: Player) -> bool:
         """
-        Check if the given player has won (4 pieces in a row).
-
-        Uses an optimized bitwise algorithm that's much faster than checking
-        all 69 possible win patterns. The algorithm works by:
+        Uses a bitwise algorithm to avoid checking all 69 possible win patterns.
         1. Shifting the bitboard and ANDing with itself to find 2 consecutive pieces
         2. Shifting the result again to find 4 consecutive pieces
 
@@ -157,12 +146,6 @@ class GameBoard:
         - If we have bits at positions: X, X+1, X+2, X+3
         - Then: board & (board >> 1) will have bits at X, X+1, X+2 (3 consecutive)
         - And: result & (result >> 2) will have a bit at X (indicating 4 consecutive)
-
-        Args:
-            player: Player to check for win condition
-
-        Returns:
-            True if player has 4 pieces in a row (horizontal, vertical, or diagonal)
         """
         # if no one has even played 4 pieces, there cannot be a 4 in a row
         if self.move_count < 7:
@@ -194,38 +177,6 @@ class GameBoard:
             return True
 
         return False
-
-    def is_full(self) -> bool:
-        return self.move_count >= 42
-
-    def undo_move(self, column: int, player: Player) -> None:
-        """
-        Undo the last move in the given column for the given player.
-
-        This is essential for minimax search algorithms that need to explore
-        moves and then backtrack.
-        """
-        # Decrement height first to get the position of the piece to remove
-        self.heights[column] -= 1
-        pos = self.heights[column] * 7 + column
-
-        # Clear the bit for this player's board using bitwise AND with NOT
-        self.boards[player - 1] &= ~(1 << pos)
-
-        self.move_count -= 1
-
-        # If column was full and is now available again, add it back in correct position
-        # Column just became available (was 6, now 5)
-        if self.heights[column] == 5:
-            # Get order index for this column (O(1) lookup)
-            column_order_idx = GameBoard._COLUMN_ORDER_MAP[column]
-            # Find where to insert it in _valid_columns to maintain center-first order
-            insert_idx = len(self._valid_columns)
-            for i, valid_col in enumerate(self._valid_columns):
-                if GameBoard._COLUMN_ORDER_MAP[valid_col] > column_order_idx:
-                    insert_idx = i
-                    break
-            self._valid_columns.insert(insert_idx, column)
 
     def reconstruct_from_moves(self, moves: List[int]) -> None:
         """
@@ -267,7 +218,7 @@ class SimpleEngine:
         """
         self.board = GameBoard()
         self.my_player: Optional[Player] = None
-        self.time_per_move = 5000  # Default 5 seconds per move
+        self.time_per_move = 10
         self.agent = self._create_agent(agent_class_name, evaluator_name)
 
     def _create_agent(self, agent_class_name: str, evaluator_name: str) -> Any:

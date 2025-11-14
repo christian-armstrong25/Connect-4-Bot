@@ -1,14 +1,6 @@
-"""
-Iterative Deepening Bot Implementation
-
-A bot that uses iterative deepening to gradually increase search depth until
-time runs out. This ensures the bot always has a move ready and can use all
-available time effectively.
-"""
-
 import time
 from typing import Optional
-from connect4_engine import GameBoard, Player
+from engine import GameBoard, Player
 from Board_Evals.eval_new import BoardEvaluator as NewEvaluator
 from Board_Evals.eval_old import BoardEvaluator as OldEvaluator
 from utils.negamax import negamax
@@ -16,7 +8,7 @@ from utils.negamax import negamax
 
 class IterativeDeepeningBot:
     # Set a small buffer to ensure we finish search before deadline
-    TIME_BUFFER_MS = 0.15
+    TIME_BUFFER_MS = 0.2
 
     def __init__(self, evaluator_name: str = "old"):
         evaluators = {"old": OldEvaluator,

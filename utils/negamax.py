@@ -1,7 +1,7 @@
 import time
 from typing import Optional, Tuple
 
-from connect4_engine import GameBoard, Player
+from engine import GameBoard, Player
 
 
 def negamax(board: GameBoard, player: Player, depth: int, evaluator,
@@ -12,30 +12,27 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
         score = evaluator.evaluate_board(board)
         return (-score if player == Player.PLAYER2 else score, None)
 
-    best_score, best_move = float('-inf'), None
+    # Principal Variation (PV) move ordering
     moves = board.get_valid_moves()
-
-    # Principal Variation (PV) move ordering: try the best move from previous
-    # iteration first, as it's likely to be good in this iteration too
-    # Create a new list to avoid modifying the cached list
-    if first_move is not None and first_move in moves:
+    if first_move is not None and first_move in moves and moves[0] != first_move:
         moves = [first_move] + [m for m in moves if m != first_move]
 
+    best_score, best_move = float('-inf'), None
     for move in moves:
         if deadline and time.perf_counter() >= deadline:
-            return float('-inf'), None  # Signal timeout
+            return float('-inf'), None
 
-        # Make move and search recursively
         board.make_move(move, player)
 
-        # Check if this move wins immediately
+        # Stop search if move wins
         if board.check_win(player):
             board.undo_move(move, player)
             return float('inf'), move
 
+        # Recursively search
         opponent = Player.PLAYER2 if player == Player.PLAYER1 else Player.PLAYER1
         score = -negamax(board, opponent, depth - 1, evaluator,
-                         -beta, -alpha, deadline)[0]
+                         -beta, -alpha, deadline, best_move)[0]
         board.undo_move(move, player)
 
         # Update best move
