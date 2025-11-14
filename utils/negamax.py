@@ -8,7 +8,6 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
             alpha: float = float('-inf'), beta: float = float('inf'),
             deadline: Optional[float] = None,
             first_move: Optional[int] = None) -> Tuple[float, Optional[int]]:
-
     if depth == 0:
         score = evaluator.evaluate_board(board)
         return (-score if player == Player.PLAYER2 else score, None)
