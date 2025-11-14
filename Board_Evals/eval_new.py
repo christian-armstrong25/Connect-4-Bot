@@ -2,10 +2,6 @@ from connect4_engine import GameBoard, Player
 
 
 class BoardEvaluator:
-    # Use a large finite number so move_count adjustments actually matter
-    WIN_SCORE = 100
-    THREAT_SCORE = 1
-
     # Pattern definitions: (player_positions, gap_position)
     PATTERNS = [
         ((1, 2, 3), 0),  # ' 111'
@@ -15,13 +11,6 @@ class BoardEvaluator:
     ]
 
     def evaluate_board(self, board: GameBoard) -> float:
-        if board.check_win(Player.PLAYER1):
-            return self.WIN_SCORE - board.move_count
-        if board.check_win(Player.PLAYER2):
-            return -self.WIN_SCORE + board.move_count
-        return self._evaluate_position(board)
-
-    def _evaluate_position(self, board: GameBoard) -> float:
         p1_board, p2_board = board.boards
 
         # Precompute occupied positions (used multiple times, so cache it)
@@ -30,7 +19,7 @@ class BoardEvaluator:
         # Count threats for both players
         p1_threats = self._count_threats(p1_board, occupied)
         p2_threats = self._count_threats(p2_board, occupied)
-        return (p1_threats - p2_threats) * self.THREAT_SCORE
+        return (p1_threats - p2_threats)
 
     def _count_threats(self, player_board: int, occupied: int) -> int:
         count = 0

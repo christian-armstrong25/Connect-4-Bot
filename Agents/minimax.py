@@ -8,7 +8,7 @@ This bot searches to a fixed depth of 4, regardless of time available.
 from Board_Evals.eval_new import BoardEvaluator as NewEvaluator
 from Board_Evals.eval_old import BoardEvaluator as OldEvaluator
 from connect4_engine import GameBoard, Player
-from util import negamax
+from utils.negamax import negamax
 
 
 class MinimaxBot:

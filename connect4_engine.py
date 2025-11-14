@@ -164,6 +164,9 @@ class GameBoard:
         Returns:
             True if player has 4 pieces in a row (horizontal, vertical, or diagonal)
         """
+        if self.move_count < 7:
+            return False
+
         board = self.boards[player - 1]
 
         # Check horizontal: shift by 1 (move right one column)

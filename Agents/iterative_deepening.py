@@ -11,12 +11,12 @@ from typing import Optional
 from connect4_engine import GameBoard, Player
 from Board_Evals.eval_new import BoardEvaluator as NewEvaluator
 from Board_Evals.eval_old import BoardEvaluator as OldEvaluator
-from util import negamax
+from utils.negamax import negamax
 
 
 class IterativeDeepeningBot:
     # Set a small buffer to ensure we finish search before deadline
-    TIME_BUFFER_MS = 0.15
+    TIME_BUFFER_MS = 0.25
 
     def __init__(self, evaluator_name: str = "old"):
         evaluators = {"old": OldEvaluator,
@@ -26,7 +26,7 @@ class IterativeDeepeningBot:
     def calculate_move(self, board: GameBoard, player: Player, time_per_move: int) -> int:
         deadline = time.perf_counter() + (time_per_move - self.TIME_BUFFER_MS) / 1000.0
 
-        best_move: Optional[int] = None
+        best_move = None
         depth = 1
 
         while True:
