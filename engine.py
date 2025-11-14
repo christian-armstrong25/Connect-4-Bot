@@ -38,13 +38,9 @@ class GameBoard:
     def __init__(self):
         """Initialize an empty Connect 4 board."""
         self.rows, self.cols = 6, 7
+        self.heights = [0] * 7
         self.move_count = 0
         self.boards = [0, 0]  # [player1_bitboard, player2_bitboard]
-        # Track height of each column (0-6) for O(1) move validation
-        self.heights = [0] * 7
-        # Maintain list of valid columns (columns that aren't full)
-        # Column order prioritizing center columns (better moves in Connect 4)
-        # Center first, then outward
 
     def __str__(self) -> str:
         """
@@ -98,14 +94,12 @@ class GameBoard:
         return True
 
     def undo_move(self, column: int, player: Player) -> None:
-        was_full = self.heights[column] == 6
+        self.move_count -= 1
         self.heights[column] -= 1
-        pos = self.heights[column] * 7 + column
 
         # Clear the bit for this player's board using bitwise AND with NOT
+        pos = self.heights[column] * 7 + column
         self.boards[player - 1] &= ~(1 << pos)
-
-        self.move_count -= 1
 
     def is_full(self) -> bool:
         return self.move_count >= 42
@@ -153,12 +147,6 @@ class GameBoard:
         return False
 
     def reconstruct_from_moves(self, moves: List[int]) -> None:
-        """
-        Reconstruct the board state from a sequence of moves.
-
-        Useful for initializing a board from a game history or test position.
-        Moves are applied in order, alternating between Player 1 and Player 2.
-        """
         # Reset board to empty state
         self.boards = [0, 0]
         self.heights = [0] * 7
