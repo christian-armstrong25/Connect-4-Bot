@@ -8,12 +8,14 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
             alpha: float = float('-inf'), beta: float = float('inf'),
             deadline: Optional[float] = None,
             first_move: Optional[int] = None) -> Tuple[float, Optional[int]]:
+
     if depth == 0:
         score = evaluator.evaluate_board(board)
         return (-score if player == Player.PLAYER2 else score, None)
 
+    # Column order prioritizing center columns
+    moves = [3, 2, 4, 1, 5, 0, 6]
     # Principal Variation (PV) move ordering
-    moves = board.get_valid_moves()
     if first_move is not None and first_move in moves and moves[0] != first_move:
         moves = [first_move] + [m for m in moves if m != first_move]
 
@@ -22,7 +24,9 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
         if deadline and time.perf_counter() >= deadline:
             return float('-inf'), None
 
-        board.make_move(move, player)
+        # if move is not valid, continue
+        if not board.make_move(move, player):
+            continue
 
         # Stop search if move wins
         if board.check_win(player):

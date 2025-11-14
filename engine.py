@@ -35,12 +35,6 @@ class GameBoard:
     # Diagonal up: rows 0-2, columns 3-6 (where 4-in-a-row can start)
     _DIAGONAL_UP_MASK = 0x1E3C78 & _VALID_MASK
 
-    # Column order prioritizing center columns (better moves in Connect 4)
-    # Center first, then outward
-    _COLUMN_ORDER = [3, 2, 4, 1, 5, 0, 6]
-    # Dictionary mapping column -> order index for O(1) lookups
-    _COLUMN_ORDER_MAP = {col: idx for idx, col in enumerate(_COLUMN_ORDER)}
-
     def __init__(self):
         """Initialize an empty Connect 4 board."""
         self.rows, self.cols = 6, 7
@@ -51,7 +45,6 @@ class GameBoard:
         # Maintain list of valid columns (columns that aren't full)
         # Column order prioritizing center columns (better moves in Connect 4)
         # Center first, then outward
-        self._valid_columns = list(GameBoard._COLUMN_ORDER)
 
     def __str__(self) -> str:
         """
@@ -102,9 +95,6 @@ class GameBoard:
         self.heights[column] += 1
         self.move_count += 1
 
-        # If column is now full, remove it from valid columns list
-        if self.heights[column] == 6:
-            self._valid_columns.remove(column)
         return True
 
     def undo_move(self, column: int, player: Player) -> None:
@@ -116,22 +106,6 @@ class GameBoard:
         self.boards[player - 1] &= ~(1 << pos)
 
         self.move_count -= 1
-
-        # If column was full and is now available again, add it back in correct position
-        # Column just became available (was 6, now 5)
-        if was_full:
-            # Get order index for this column (O(1) lookup)
-            column_order_idx = GameBoard._COLUMN_ORDER_MAP[column]
-            # Find where to insert it in _valid_columns to maintain center-first order
-            insert_idx = len(self._valid_columns)
-            for i, valid_col in enumerate(self._valid_columns):
-                if GameBoard._COLUMN_ORDER_MAP[valid_col] > column_order_idx:
-                    insert_idx = i
-                    break
-            self._valid_columns.insert(insert_idx, column)
-
-    def get_valid_moves(self) -> List[int]:
-        return self._valid_columns
 
     def is_full(self) -> bool:
         return self.move_count >= 42
@@ -189,7 +163,6 @@ class GameBoard:
         self.boards = [0, 0]
         self.heights = [0] * 7
         self.move_count = 0
-        self._valid_columns = list(GameBoard._COLUMN_ORDER)
 
         # Apply each move, alternating players
         for i, move in enumerate(moves):
@@ -291,7 +264,6 @@ class SimpleEngine:
             self.board.boards = [0, 0]
             self.board.heights = [0] * 7
             self.board.move_count = 0
-            self.board._valid_columns = list(GameBoard._COLUMN_ORDER)
 
         # If we're player 1, we move first
         if self.my_player == Player.PLAYER1:
