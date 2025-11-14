@@ -24,12 +24,12 @@ class BoardEvaluator:
     def _count_threats(self, player_board: int, occupied: int) -> int:
         count = 0
 
+        # Column-major layout: bit_pos = col * 7 + row
         # Check horizontal threats (rows 1-5, columns 0-3)
         # We check 4 consecutive positions, so we can start from column 0-3
         for row in range(1, 6):  # Skip row 0 (bottom) - threats there aren't useful
-            row_base = row * 7
             for col in range(4):  # Can fit 4 positions starting from col 0-3
-                base_pos = row_base + col
+                base_pos = col * 7 + row  # Column-major: col * 7 + row
                 count += self._count_patterns_horizontal(
                     player_board, occupied, base_pos
                 )
@@ -38,7 +38,7 @@ class BoardEvaluator:
         # Need at least 3 rows and 4 columns to fit a diagonal pattern
         for row in range(3):  # Can fit 4 positions starting from rows 0-2
             for col in range(4):  # Can fit 4 positions starting from cols 0-3
-                base_pos = row * 7 + col
+                base_pos = col * 7 + row  # Column-major: col * 7 + row
                 count += self._count_patterns_diagonal_down(
                     player_board, occupied, base_pos
                 )
@@ -47,7 +47,7 @@ class BoardEvaluator:
         # Need at least 3 rows, and columns must start from 3-6 (to fit pattern going left)
         for row in range(3):  # Can fit 4 positions starting from rows 0-2
             for col in range(3, 7):  # Can fit 4 positions starting from cols 3-6
-                base_pos = row * 7 + col
+                base_pos = col * 7 + row  # Column-major: col * 7 + row
                 count += self._count_patterns_diagonal_up(
                     player_board, occupied, base_pos
                 )
@@ -55,17 +55,18 @@ class BoardEvaluator:
         return count
 
     def _count_patterns_horizontal(self, player_board: int, occupied: int, base_pos: int) -> int:
-        """Count patterns in horizontal direction."""
+        """Count patterns in horizontal direction (column-major: +7 per step)."""
         count = 0
 
         for player_positions, gap_pos in self.PATTERNS:
             # Build bitmask of all player piece positions for this pattern
+            # Horizontal: moving right = +7 (next column in column-major layout)
             player_bits = 0
             for pos_offset in player_positions:
-                player_bits |= 1 << (base_pos + pos_offset)
+                player_bits |= 1 << (base_pos + pos_offset * 7)
 
             # Get bit position of the gap
-            gap_bit = 1 << (base_pos + gap_pos)
+            gap_bit = 1 << (base_pos + gap_pos * 7)
 
             # Check if pattern matches:
             # 1. All player positions have pieces (player_board & player_bits == player_bits)
@@ -76,11 +77,13 @@ class BoardEvaluator:
         return count
 
     def _count_patterns_diagonal_down(self, player_board: int, occupied: int, base_pos: int) -> int:
-        """Count patterns in diagonal down direction (top-left to bottom-right)."""
+        """Count patterns in diagonal down direction (top-left to bottom-right).
+        Column-major: moving up-right = +8 (1 row + 1 column = +1 + 7).
+        """
         count = 0
 
         for player_positions, gap_pos in self.PATTERNS:
-            # Build bitmask: each step moves 8 bits (1 row + 1 column)
+            # Build bitmask: each step moves 8 bits (1 row + 1 column in column-major)
             player_bits = 0
             for pos_offset in player_positions:
                 player_bits |= 1 << (base_pos + pos_offset * 8)
@@ -94,16 +97,21 @@ class BoardEvaluator:
         return count
 
     def _count_patterns_diagonal_up(self, player_board: int, occupied: int, base_pos: int) -> int:
-        """Count patterns in diagonal up direction (top-right to bottom-left)."""
+        """Count patterns in diagonal up direction (top-right to bottom-left).
+        Column-major: moving up-left = -6 (1 row - 1 column = +1 - 7 = -6).
+        Since we're checking from left to right, we need to check in reverse.
+        """
         count = 0
 
         for player_positions, gap_pos in self.PATTERNS:
-            # Build bitmask: each step moves 6 bits (1 row - 1 column)
+            # Build bitmask: each step moves -6 bits (1 row - 1 column in column-major)
+            # But we check from left to right, so we need to reverse the direction
+            # Actually, we check from col 3-6 going left, so we use -6
             player_bits = 0
             for pos_offset in player_positions:
-                player_bits |= 1 << (base_pos + pos_offset * 6)
+                player_bits |= 1 << (base_pos - pos_offset * 6)
 
-            gap_bit = 1 << (base_pos + gap_pos * 6)
+            gap_bit = 1 << (base_pos - gap_pos * 6)
 
             # Check if pattern matches
             if (player_board & player_bits) == player_bits and not (occupied & gap_bit):

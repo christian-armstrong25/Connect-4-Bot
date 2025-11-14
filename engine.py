@@ -10,131 +10,139 @@ class Player(IntEnum):
 
 
 class GameBoard:
-    """
-    The board is represented as two 64-bit integers (bitboards), one for each player.
-    Each bit represents a position on the 6x7 board, with bit 0 being the bottom-left
-    corner and bits increasing left-to-right, then bottom-to-top.
-    """
-    # Valid board positions: bits 0-41 (42 bits total for 6x7 board)
-    _VALID_MASK = (1 << 42) - 1
-    # Horizontal: all rows (0-5), columns 0-3 (where 4-in-a-row can start)
-    _HORIZONTAL_MASK = 0x78F1E3C78F & _VALID_MASK
-    # Vertical: rows 0-2 (bits 0-20), all columns (where 4-in-a-row can start)
-    _VERTICAL_MASK = 0x1FFFFF  # Bits 0-20 (rows 0-2), prevents row wrap
-    # Diagonal down: rows 0-2, columns 0-3 (where 4-in-a-row can start)
-    _DIAGONAL_DOWN_MASK = 0x3C78F & _VALID_MASK
-    # Diagonal up: rows 0-2, columns 3-6 (where 4-in-a-row can start)
-    _DIAGONAL_UP_MASK = 0x1E3C78 & _VALID_MASK
+    HEIGHT = 6
+    WIDTH = 7
+    MAX_MOVES = HEIGHT * WIDTH
 
     def __init__(self):
-        self.rows, self.cols = 6, 7
-        self.heights = [0] * 7
         self.move_count = 0
-        self.boards = [0, 0]  # [player1_bitboard, player2_bitboard]
+        self.position = 0  # Current player's pieces
+        self.mask = 0      # All occupied cells
+        self._current_player_in_position = Player.PLAYER1
+
+    @staticmethod
+    def _top_mask(col: int) -> int:
+        """Return mask for the top bit of a column."""
+        return (1 << (GameBoard.HEIGHT - 1)) << col * (GameBoard.HEIGHT + 1)
+
+    @staticmethod
+    def _bottom_mask(col: int) -> int:
+        """Return mask for the bottom bit of a column."""
+        return 1 << col * (GameBoard.HEIGHT + 1)
+
+    def can_play(self, col: int) -> bool:
+        """Check if a column can be played."""
+        return not (self.mask & self._top_mask(col))
+
+    @property
+    def boards(self):
+        """Return [player1_bitboard, player2_bitboard] for compatibility."""
+        if self.move_count == 0:
+            return [0, 0]
+        if self._current_player_in_position == Player.PLAYER1:
+            return [self.position, self.mask ^ self.position]
+        return [self.mask ^ self.position, self.position]
 
     def __str__(self) -> str:
-        """
-        Create a human-readable string representation of the board.
+        """Return human-readable board representation."""
+        p1_board, p2_board = self.boards
+        result = []
 
-        Returns:
-            String showing the board with 'X' for Player 1, 'O' for Player 2,
-            and '.' for empty spaces. Rows are displayed top to bottom.
-        """
-        # Pre-allocate list with known size (6 rows + separator + column numbers)
-        result = [None] * (self.rows + 2)
-        idx = 0
-
-        # Iterate from top row to bottom row
-        for row in range(self.rows - 1, -1, -1):
+        for row in range(self.HEIGHT - 1, -1, -1):
             line = ["|"]
-            for col in range(self.cols):
-                pos = row * 7 + col  # Calculate bit position
-                bit = 1 << pos       # Create bit mask for this position
-                if self.boards[0] & bit:
-                    line.append(" X")  # Player 1
-                elif self.boards[1] & bit:
-                    line.append(" O")  # Player 2
+            for col in range(self.WIDTH):
+                pos = col * (self.HEIGHT + 1) + row
+                bit = 1 << pos
+                if p1_board & bit:
+                    line.append(" X")
+                elif p2_board & bit:
+                    line.append(" O")
                 else:
-                    line.append(" .")  # Empty
+                    line.append(" .")
             line.append(" |")
-            result[idx] = "".join(line)
-            idx += 1
+            result.append("".join(line))
 
-        # Add separator and column numbers
-        result[idx] = "|---------------|"
-        idx += 1
-        result[idx] = "  0 1 2 3 4 5 6"
+        result.append("|---------------|")
+        result.append("  0 1 2 3 4 5 6")
         return "\n".join(result)
 
     def make_move(self, column: int, player: Player) -> bool:
-        # Check if move is valid
-        if not (0 <= column < 7 and self.heights[column] < 6):
+        """Make a move in the specified column."""
+        if not (0 <= column < self.WIDTH) or not self.can_play(column):
             return False
 
-        # Calculate position in bitboard
-        pos = self.heights[column] * 7 + column
+        # Update mask to add piece at correct height
+        new_mask = self.mask | (self.mask + self._bottom_mask(column))
+        new_bit = new_mask & ~self.mask
+        self.mask = new_mask
 
-        # Set bit for player bitboard
-        self.boards[player - 1] |= 1 << pos
+        # If different player, switch position first
+        if self.move_count > 0 and self._current_player_in_position != player:
+            self.position ^= self.mask
+        # Add new piece to current player's position
+        self.position |= new_bit
 
-        # Update column height and move count
-        self.heights[column] += 1
+        self._current_player_in_position = player
         self.move_count += 1
-
         return True
 
     def undo_move(self, column: int, player: Player) -> None:
+        """Undo a move in the specified column."""
         self.move_count -= 1
-        self.heights[column] -= 1
 
-        # Clear the bit for this player's board using bitwise AND with NOT
-        pos = self.heights[column] * 7 + column
-        self.boards[player - 1] &= ~(1 << pos)
+        # Find and remove the highest set bit in this column
+        col_base = column * (self.HEIGHT + 1)
+        col_mask = self.mask & (0b1111111 << col_base)
+        if col_mask:
+            highest_bit = 1 << (col_base + self.HEIGHT - 1)
+            while highest_bit >= (1 << col_base) and not (self.mask & highest_bit):
+                highest_bit >>= 1
+            self.mask &= ~highest_bit
+            self.position &= ~highest_bit
+
+        # Switch players back
+        self.position ^= self.mask
+        self._current_player_in_position = Player.PLAYER2 if self._current_player_in_position == Player.PLAYER1 else Player.PLAYER1
 
     def is_full(self) -> bool:
-        return self.move_count >= 42
+        return self.move_count >= self.MAX_MOVES
 
     def check_win(self, player: Player) -> bool:
         # if no one has even played 4 pieces, there cannot be a 4 in a row
         if self.move_count < 7:
             return False
 
-        board = self.boards[player - 1]
+        p1_board, p2_board = self.boards
+        board = p1_board if player == Player.PLAYER1 else p2_board
 
-        # order matters, vertical wins are rare while diagonals are the most common
-
-        # Check diagonal down (\): shift by 8 (move up-right: +1 row, +1 col)
-        # Only check positions that can form valid diagonals (cols 0-3, rows 0-2)
-        if board & (board >> 8) & (board >> 16) & (board >> 24) & self._DIAGONAL_DOWN_MASK:
+        # Check diagonals first (most common wins)
+        m = board & (board >> 6)
+        if m & (m >> 12):
             return True
 
-        # Check diagonal up (/): shift by 6 (move up-left: +1 row, -1 col)
-        # Only check positions that can form valid diagonals (cols 3-6, rows 0-2)
-        if board & (board >> 6) & (board >> 12) & (board >> 18) & self._DIAGONAL_UP_MASK:
+        m = board & (board >> 8)
+        if m & (m >> 16):
             return True
 
-        # Check horizontal: shift by 1 (move right one column)
-        # Check for 4 consecutive: board & (board>>1) & (board>>2) & (board>>3)
-        if board & (board >> 1) & (board >> 2) & (board >> 3) & self._HORIZONTAL_MASK:
+        # Check horizontal
+        m = board & (board >> 7)
+        if m & (m >> 14):
             return True
 
-        # Check vertical: shift by 7 (move up one row)
-        # Only check bottom 3 rows (rows 0-2) since that's where 4-in-a-row can start
-        if board & (board >> 7) & (board >> 14) & (board >> 21) & self._VERTICAL_MASK:
-            return True
-
-        return False
+        # Check vertical (least common)
+        m = board & (board >> 1)
+        return bool(m & (m >> 2))
 
     def reconstruct_from_moves(self, moves: List[int]) -> None:
-        # Reset board to empty state
-        self.boards = [0, 0]
-        self.heights = [0] * 7
+        """Reset board and apply moves from the list."""
+        self.position = 0
+        self.mask = 0
         self.move_count = 0
+        self._current_player_in_position = Player.PLAYER1
 
-        # Apply each move, alternating players
-        for i, move in enumerate(moves):
-            current_player = Player.PLAYER1 if i % 2 == 0 else Player.PLAYER2
-            self.make_move(move, current_player)
+        for i, col in enumerate(moves):
+            self.make_move(col, Player.PLAYER1 if i %
+                           2 == 0 else Player.PLAYER2)
 
 
 class SimpleEngine:
@@ -162,148 +170,64 @@ class SimpleEngine:
         self.agent = self._create_agent(agent_class_name, evaluator_name)
 
     def _create_agent(self, agent_class_name: str, evaluator_name: str) -> Any:
-        """
-        Create and return an AI agent instance.
-
-        Args:
-            agent_class_name: Name of the agent class to instantiate
-            evaluator_name: Name of the board evaluator to use
-
-        Returns:
-            AI agent instance of the requested type
-
-        Raises:
-            ValueError: If agent_class_name is not recognized
-        """
+        """Create and return an AI agent instance."""
         from Agents.ids import IterativeDeepeningBot
         from Agents.minimax import MinimaxBot
 
-        agents = {
-            "MinimaxBot": MinimaxBot,
-            "IterativeDeepeningBot": IterativeDeepeningBot
-        }
-
+        agents = {"MinimaxBot": MinimaxBot,
+                  "IterativeDeepeningBot": IterativeDeepeningBot}
         if agent_class_name not in agents:
             raise ValueError(f"Unknown agent class: {agent_class_name}")
-
         return agents[agent_class_name](evaluator_name)
 
     def _send_move(self, column: int) -> None:
-        """
-        Send a move response via binary protocol to stdout.
-
-        Protocol format:
-        - Header: 1 byte message type (1 = move), 2 bytes message length (little-endian)
-        - Body: 1 byte column index (0-6)
-        """
-        header = struct.pack('<BH', 1, 4)  # Message type 1, length 4 bytes
-        column_byte = struct.pack('B', column)  # Column as unsigned byte
-        sys.stdout.buffer.write(header + column_byte)
+        """Send a move response via binary protocol to stdout."""
+        sys.stdout.buffer.write(struct.pack('<BHB', 1, 4, column))
         sys.stdout.buffer.flush()
 
     def _handle_game_start(self, data: bytes) -> None:
-        """
-        Handle game start message (message type 0).
-
-        Message format:
-        - Bytes 0-2: Header (already parsed)
-        - Byte 3: Player number ('1' or '2')
-        - Bytes 4-7: Time per move in milliseconds (unsigned int, little-endian)
-        - Byte 8: Number of initial moves
-        - Bytes 9+: Initial moves (column indices)
-        """
-        # Extract player number (byte 3)
+        """Handle game start message (message type 0)."""
         self.my_player = Player.PLAYER1 if data[3] == ord(
             '1') else Player.PLAYER2
-
-        # Extract time limit (bytes 4-7, unsigned int)
         self.time_per_move = struct.unpack('<I', data[4:8])[0]
 
-        # Extract initial moves if any
         num_moves = data[8]
         moves = list(data[9:9+num_moves]) if num_moves > 0 else []
+        self.board.reconstruct_from_moves(moves)
 
-        # Reconstruct board from initial moves
-        if moves:
-            self.board.reconstruct_from_moves(moves)
-        else:
-            # Reset board to empty state if no moves
-            self.board.boards = [0, 0]
-            self.board.heights = [0] * 7
-            self.board.move_count = 0
-
-        # If we're player 1, we move first
         if self.my_player == Player.PLAYER1:
             self._make_and_send_move()
 
     def _handle_make_move(self, data: bytes) -> None:
-        """
-        Handle opponent move notification (message type 1).
-
-        Message format:
-        - Bytes 0-2: Header (already parsed)
-        - Byte 3: Column index of opponent's move
-        """
-        # Determine opponent and apply their move
+        """Handle opponent move notification (message type 1)."""
         opponent = Player.PLAYER2 if self.my_player == Player.PLAYER1 else Player.PLAYER1
-        opponent_column = data[3]
-        self.board.make_move(opponent_column, opponent)
-
-        # Calculate and send our response move
+        self.board.make_move(data[3], opponent)
         self._make_and_send_move()
 
     def _make_and_send_move(self) -> None:
-        """
-        Calculate the best move using the AI agent and send it.
-
-        Exits with error code 1 if move calculation fails or move is invalid.
-        """
+        """Calculate the best move using the AI agent and send it."""
         move = self.agent.calculate_move(
-            self.board, self.my_player, self.time_per_move
-        )
-
-        # Validate move
+            self.board, self.my_player, self.time_per_move)
         if move is None or not self.board.make_move(move, self.my_player):
             sys.exit(1)
-
         self._send_move(move)
 
     def run(self) -> None:
-        """
-        Main engine loop that processes incoming messages.
+        """Main engine loop that processes incoming messages."""
+        handlers = {0: self._handle_game_start, 1: self._handle_make_move}
 
-        Continuously reads binary messages from stdin and handles them:
-        - Message type 0: Game start
-        - Message type 1: Opponent move
-
-        Exits on EOF, invalid message, or exception.
-        """
         try:
-            handlers = {
-                0: self._handle_game_start,
-                1: self._handle_make_move
-            }
-
             while True:
-                # Read message header (3 bytes: 1 byte type + 2 bytes length)
-                header_data = sys.stdin.buffer.read(3)
-                if len(header_data) < 3:
-                    break  # EOF or incomplete message
+                header = sys.stdin.buffer.read(3)
+                if len(header) < 3:
+                    break
 
-                # Parse header
-                msg_type, msg_length = struct.unpack('<BH', header_data)
+                msg_type, msg_length = struct.unpack('<BH', header)
+                body = sys.stdin.buffer.read(msg_length - 3)
+                if len(body) < (msg_length - 3) or msg_type not in handlers:
+                    break
 
-                # Read remaining message body
-                remaining_data = sys.stdin.buffer.read(msg_length - 3)
-                if len(remaining_data) < (msg_length - 3):
-                    break  # Incomplete message
-
-                # Route to appropriate handler
-                if msg_type not in handlers:
-                    break  # Unknown message type
-
-                handlers[msg_type](header_data + remaining_data)
-
+                handlers[msg_type](header + body)
         except (KeyboardInterrupt, Exception):
             sys.exit(1)
 
