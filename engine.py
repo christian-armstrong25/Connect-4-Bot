@@ -19,24 +19,21 @@ class GameBoard:
         self.position = 0  # Current player's pieces
         self.mask = 0      # All occupied cells
         self._current_player_in_position = Player.PLAYER1
+        self.last_move: Optional[int] = None  # Last column played
 
     @staticmethod
     def _top_mask(col: int) -> int:
-        """Return mask for the top bit of a column."""
         return (1 << (GameBoard.HEIGHT - 1)) << col * (GameBoard.HEIGHT + 1)
 
     @staticmethod
     def _bottom_mask(col: int) -> int:
-        """Return mask for the bottom bit of a column."""
         return 1 << col * (GameBoard.HEIGHT + 1)
 
     def can_play(self, col: int) -> bool:
-        """Check if a column can be played."""
         return not (self.mask & self._top_mask(col))
 
     @property
     def boards(self):
-        """Return [player1_bitboard, player2_bitboard] for compatibility."""
         if self.move_count == 0:
             return [0, 0]
         if self._current_player_in_position == Player.PLAYER1:
@@ -67,7 +64,6 @@ class GameBoard:
         return "\n".join(result)
 
     def make_move(self, column: int, player: Player) -> bool:
-        """Make a move in the specified column."""
         if not (0 <= column < self.WIDTH) or not self.can_play(column):
             return False
 
@@ -84,19 +80,18 @@ class GameBoard:
 
         self._current_player_in_position = player
         self.move_count += 1
+        self.last_move = column
         return True
 
-    def undo_move(self, column: int, player: Player) -> None:
-        """Undo a move in the specified column."""
+    def undo_move(self, column: Optional[int] = None) -> None:
         self.move_count -= 1
+        self.last_move = None
 
         # Find and remove the highest set bit in this column
         col_base = column * (self.HEIGHT + 1)
-        col_mask = self.mask & (0b1111111 << col_base)
+        col_mask = self.mask & ((1 << (self.HEIGHT + 1)) - 1) << col_base
         if col_mask:
-            highest_bit = 1 << (col_base + self.HEIGHT - 1)
-            while highest_bit >= (1 << col_base) and not (self.mask & highest_bit):
-                highest_bit >>= 1
+            highest_bit = 1 << (col_mask.bit_length() - 1)
             self.mask &= ~highest_bit
             self.position &= ~highest_bit
 
@@ -139,6 +134,7 @@ class GameBoard:
         self.mask = 0
         self.move_count = 0
         self._current_player_in_position = Player.PLAYER1
+        self.last_move = None
 
         for i, col in enumerate(moves):
             self.make_move(col, Player.PLAYER1 if i %

@@ -38,7 +38,7 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
 
         # Immediate win check
         if board.check_win(player):
-            board.undo_move(move, player)
+            board.undo_move(move)
             return MATE_SCORE - ply, move
 
         # Recursive search
@@ -46,7 +46,7 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
         score = -negamax(board, opponent, depth - 1, evaluator,
                          -beta, -alpha, deadline, best_move, ply + 1,
                          move_scores, None)[0]
-        board.undo_move(move, player)
+        board.undo_move(move)
 
         # Store scores for move ordering
         if move_scores and ply == 0:

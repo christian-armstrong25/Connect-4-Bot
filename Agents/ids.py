@@ -17,7 +17,7 @@ class IterativeDeepeningBot:
 
     def calculate_move(self, board: GameBoard, player: Player, time_per_move: int) -> int:
         deadline = time.perf_counter() + (time_per_move - self.TIME_BUFFER_MS) / 1000.0
-        best_move, move_order = None, None
+        best_move, move_order = None, []
         depth = 1
 
         while True:
@@ -25,6 +25,7 @@ class IterativeDeepeningBot:
             _, move = negamax(
                 board, player, depth, self.evaluator,
                 deadline=deadline,
+                first_move=board.last_move,
                 move_scores=move_scores,
                 ordered_moves=move_order
             )

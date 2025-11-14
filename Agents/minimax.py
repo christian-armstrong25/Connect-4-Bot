@@ -14,6 +14,6 @@ class MinimaxBot:
 
     def calculate_move(self, board: GameBoard, player: Player, time_per_move: int) -> int:
         _, move = negamax(
-            board, player, self.SEARCH_DEPTH, self.evaluator)
+            board, player, self.SEARCH_DEPTH, self.evaluator, first_move=board.last_move)
 
         return move
