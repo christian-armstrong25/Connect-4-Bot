@@ -1,7 +1,7 @@
 import random
 import time
 
-from Agents.iterative_deepening import IterativeDeepeningBot
+from Agents.ids import IterativeDeepeningBot
 from Agents.minimax import MinimaxBot
 from engine import GameBoard, Player
 

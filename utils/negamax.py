@@ -14,6 +14,10 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
             ply: int = 0,
             move_scores: Optional[List[Tuple[float, int]]] = None,
             ordered_moves: Optional[list] = None) -> Tuple[float, Optional[int]]:
+    # Draw check
+    if board.is_full():
+        return (0, None)
+
     # Depth cutoff check
     if depth == 0:
         score = evaluator.evaluate_board(board)

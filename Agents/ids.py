@@ -7,7 +7,7 @@ from utils.negamax import negamax
 
 
 class IterativeDeepeningBot:
-    # Set a small buffer to ensure we finish search before deadline
+    # Set a small buffer to ensure we stop search before deadline
     TIME_BUFFER_MS = 0.2
 
     def __init__(self, evaluator_name: str = "old"):

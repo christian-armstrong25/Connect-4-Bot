@@ -175,7 +175,7 @@ class SimpleEngine:
         Raises:
             ValueError: If agent_class_name is not recognized
         """
-        from Agents.iterative_deepening import IterativeDeepeningBot
+        from Agents.ids import IterativeDeepeningBot
         from Agents.minimax import MinimaxBot
 
         agents = {
