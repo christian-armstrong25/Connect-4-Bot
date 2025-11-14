@@ -15,17 +15,8 @@ class GameBoard:
     Each bit represents a position on the 6x7 board, with bit 0 being the bottom-left
     corner and bits increasing left-to-right, then bottom-to-top.
     """
-
-    # Bit shift amounts for win detection in each direction
-    # These represent how many bits to shift to move in each direction
-    _HORIZONTAL_SHIFT = 1      # Move right by 1 column
-    _VERTICAL_SHIFT = 7        # Move up by 1 row (7 columns per row)
-    _DIAGONAL_DOWN_SHIFT = 8   # Move up-right: +1 row (+7) + 1 col (+1) = +8
-    _DIAGONAL_UP_SHIFT = 6     # Move up-left: +1 row (+7) - 1 col (-1) = +6
-
     # Valid board positions: bits 0-41 (42 bits total for 6x7 board)
     _VALID_MASK = (1 << 42) - 1
-    # Masks to prevent false positives from bit wrapping
     # Horizontal: all rows (0-5), columns 0-3 (where 4-in-a-row can start)
     _HORIZONTAL_MASK = 0x78F1E3C78F & _VALID_MASK
     # Vertical: rows 0-2 (bits 0-20), all columns (where 4-in-a-row can start)
@@ -36,7 +27,6 @@ class GameBoard:
     _DIAGONAL_UP_MASK = 0x1E3C78 & _VALID_MASK
 
     def __init__(self):
-        """Initialize an empty Connect 4 board."""
         self.rows, self.cols = 6, 7
         self.heights = [0] * 7
         self.move_count = 0
@@ -105,16 +95,6 @@ class GameBoard:
         return self.move_count >= 42
 
     def check_win(self, player: Player) -> bool:
-        """
-        Uses a bitwise algorithm to avoid checking all 69 possible win patterns.
-        1. Shifting the bitboard and ANDing with itself to find 2 consecutive pieces
-        2. Shifting the result again to find 4 consecutive pieces
-
-        Algorithm explanation:
-        - If we have bits at positions: X, X+1, X+2, X+3
-        - Then: board & (board >> 1) will have bits at X, X+1, X+2 (3 consecutive)
-        - And: result & (result >> 2) will have a bit at X (indicating 4 consecutive)
-        """
         # if no one has even played 4 pieces, there cannot be a 4 in a row
         if self.move_count < 7:
             return False
@@ -139,7 +119,6 @@ class GameBoard:
             return True
 
         # Check vertical: shift by 7 (move up one row)
-        # Check for 4 consecutive vertically
         # Only check bottom 3 rows (rows 0-2) since that's where 4-in-a-row can start
         if board & (board >> 7) & (board >> 14) & (board >> 21) & self._VERTICAL_MASK:
             return True

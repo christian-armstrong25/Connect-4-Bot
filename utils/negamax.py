@@ -23,7 +23,7 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
         if deadline and time.perf_counter() >= deadline:
             return float('-inf'), None
 
-        # if move is not valid, continue
+        # skip move if not valid
         if not board.make_move(move, player):
             continue
 
