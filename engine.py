@@ -64,7 +64,7 @@ class GameBoard:
         return "\n".join(result)
 
     def make_move(self, column: int, player: Player) -> bool:
-        if not (0 <= column < self.WIDTH) or not self.can_play(column):
+        if not self.can_play(column):
             return False
 
         # Update mask to add piece at correct height

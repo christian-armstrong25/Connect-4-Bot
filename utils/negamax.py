@@ -25,6 +25,8 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
 
     # Move ordering: use pre-ordered moves or default center-first ordering
     moves = ordered_moves if ordered_moves else _get_default_moves(first_move)
+    # Filter invalid moves
+    moves = [m for m in moves if board.can_play(m)]
 
     best_score, best_move = float('-inf'), None
     for move in moves:
@@ -32,16 +34,14 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
         if deadline and time.perf_counter() >= deadline:
             return float('-inf'), None
 
-        # Invalid move check
-        if not board.make_move(move, player):
-            continue
+        board.make_move(move, player)
 
         # Immediate win check
         if board.check_win(player):
             board.undo_move(move)
             return MATE_SCORE - ply, move
 
-        # Recursive search
+        # Recursive search - pass ordered_moves down to propagate ordering
         opponent = Player.PLAYER2 if player == Player.PLAYER1 else Player.PLAYER1
         score = -negamax(board, opponent, depth - 1, evaluator,
                          -beta, -alpha, deadline, best_move, ply + 1,
@@ -49,7 +49,7 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
         board.undo_move(move)
 
         # Store scores for move ordering
-        if move_scores and ply == 0:
+        if move_scores is not None and ply == 0:
             move_scores.append((score, move))
 
         # Update best move
