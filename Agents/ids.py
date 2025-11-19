@@ -9,6 +9,8 @@ from utils.negamax import negamax
 class IterativeDeepeningBot:
     # Set a small buffer to ensure we stop search before deadline
     TIME_BUFFER_MS = 0.2
+    # Center-first move ordering for Connect 4 (column 3 is center)
+    CENTER_FIRST_ORDER = [3, 2, 4, 1, 5, 0, 6]
 
     def __init__(self, evaluator_name: str = "old"):
         evaluators = {"old": OldEvaluator,
@@ -38,5 +40,8 @@ class IterativeDeepeningBot:
             move_order = self._get_ordered_moves(board, move_scores)
 
     def _get_ordered_moves(self, board: GameBoard, move_scores: list) -> list:
-        """Return valid moves ordered by scores from previous depth (highest first)."""
-        return [m for _, m in sorted(move_scores, reverse=True)]
+        """Return valid moves ordered by scores from previous depth (highest first).
+        Uses center-first ordering as a tiebreaker for moves with similar scores."""
+
+        priority = {col: i for i, col in enumerate(self.CENTER_FIRST_ORDER)}
+        return [m for _, m in sorted(move_scores, key=lambda sm: (-sm[0], priority.get(sm[1], 999)))]

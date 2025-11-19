@@ -118,4 +118,3 @@ class BoardEvaluator:
                 count += 1
 
         return count
-        
