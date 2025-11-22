@@ -1,6 +1,6 @@
 from Board_Evals.eval_new import BoardEvaluator as NewEvaluator
 from Board_Evals.eval_old import BoardEvaluator as OldEvaluator
-from engine import GameBoard, Player
+from utils.engine import GameBoard, Player
 from utils.negamax import negamax
 from utils.transposition_table import TranspositionTable
 

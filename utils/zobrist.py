@@ -2,7 +2,7 @@
 import random
 from typing import Optional
 
-from engine import GameBoard, Player
+from utils.engine import GameBoard, Player
 
 
 class ZobristHasher:
@@ -48,5 +48,9 @@ _hasher: Optional[ZobristHasher] = None
 def get_hasher(seed: Optional[int] = None) -> ZobristHasher:
     global _hasher
     if _hasher is None:
+        # Use a fixed seed by default to ensure deterministic hashing
+        # This allows opening moves to work consistently
+        if seed is None:
+            seed = 42  # Fixed seed for determinism
         _hasher = ZobristHasher(seed)
     return _hasher

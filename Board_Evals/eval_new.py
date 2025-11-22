@@ -1,4 +1,4 @@
-from engine import GameBoard
+from utils.engine import GameBoard
 
 
 class BoardEvaluator:
@@ -10,7 +10,7 @@ class BoardEvaluator:
         ((0, 1, 3), 2),  # '11 1'
     ]
 
-    def evaluate_board(self, board: GameBoard) -> float:
+    def evaluate_board(self, board: GameBoard) -> int:
         p1_board, p2_board = board.boards
 
         # Precompute occupied positions (used multiple times, so cache it)
@@ -19,7 +19,7 @@ class BoardEvaluator:
         # Count threats for both players
         p1_threats = self._count_threats(p1_board, occupied)
         p2_threats = self._count_threats(p2_board, occupied)
-        return (p1_threats - p2_threats)
+        return p1_threats - p2_threats
 
     def _count_threats(self, player_board: int, occupied: int) -> int:
         count = 0

@@ -1,7 +1,7 @@
 import time
 from typing import Optional, Tuple
 
-from engine import GameBoard, Player
+from utils.engine import GameBoard, Player
 from utils.transposition_table import TranspositionTable
 from utils.zobrist import get_hasher
 
@@ -13,7 +13,7 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
             deadline: Optional[float] = None,
             ply: int = 0,
             tt: Optional[TranspositionTable] = None,
-            hash_value: Optional[int] = None) -> Tuple[float, Optional[int]]:
+            hash_value: Optional[int] = None) -> Tuple[int, Optional[int]]:
 
     if tt is None:
         tt = TranspositionTable()
@@ -26,16 +26,16 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
     if tt_result is not None:
         return tt_result
 
+    # Get valid moves in center-first order, then order by transposition table scores
+    moves = board.get_valid_moves()
+    if not moves: # check draw
+        return (0, None)
+
     if depth == 0:
         score = evaluator.evaluate_board(board)
         score = -score if player == Player.PLAYER2 else score
         tt.store(hash_value, score, depth, None)
         return (score, None)
-
-    # Get valid moves in center-first order, then order by transposition table scores
-    moves = board.get_valid_moves()
-    if not moves:
-        return (0, None)
 
     # Pre-compute opponent to avoid repeated conditionals
     opponent = Player.PLAYER2 if player == Player.PLAYER1 else Player.PLAYER1
@@ -45,12 +45,12 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
     for move in moves:
         row = _get_row_after_move(board, move)
         move_hash = hasher.update_hash(hash_value, move, row, player)
-        opponent_score = tt.get_score(move_hash) or float('inf')
+        opponent_score = tt.get_score(move_hash) or MATE_SCORE
         move_data.append((move, move_hash, opponent_score))
 
     move_data.sort(key=lambda x: x[2])  # Sort by opponent score (ascending)
 
-    best_score, best_move = float('-inf'), None
+    best_score, best_move = -MATE_SCORE, None
 
     for move, move_hash, _ in move_data:
         # Check deadline before recursive call
@@ -78,8 +78,8 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
 
         alpha = max(alpha, score)
         if alpha >= beta:
-            tt.store(hash_value, alpha, depth, best_move)
-            return (alpha, best_move)
+            tt.store(hash_value, score, depth, best_move)
+            return (score, best_move)
 
     tt.store(hash_value, best_score, depth, best_move)
     return best_score, best_move
