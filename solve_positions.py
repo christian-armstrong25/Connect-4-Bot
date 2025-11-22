@@ -1,295 +1,314 @@
-"""Script to solve positions using minimax at max depth to populate precomputed_moves."""
+"""Script to generate precomputed moves through self-play."""
 import sys
 import os
+import time
 from typing import Dict, Optional, Tuple, Set
 from utils.engine import GameBoard, Player
 from utils.zobrist import get_hasher
-from utils.negamax import negamax
 from utils.transposition_table import TranspositionTable
-from Board_Evals.eval_new import BoardEvaluator
+from Agents.ids import IterativeDeepeningBot
 import utils.zobrist
 from tqdm import tqdm
-
-# Constants
-CENTER_FIRST_MOVES = [3, 2, 4, 1, 5, 0, 6]  # Center columns first
-MAX_BEST_MOVES = 2  # Limit to top 2-3 moves based on evaluation
 
 # Reset to ensure fixed seed
 utils.zobrist._hasher = None
 hasher = get_hasher()
 
-# Global progress bar
-pbar = None
 
-
-def solve_position(board: GameBoard, current_player: Player, max_depth: int,
-                   tt: TranspositionTable, position_hash: int,
-                   evaluator=None) -> Optional[Tuple[int, int, int]]:
+def play_self_play_game(agent, board: GameBoard, time_per_move: int,
+                        visited_positions: Set[int], exploration_rate: float = 0.0) -> Tuple[str, int]:
     """
-    Solve a position using minimax at max depth.
-    Note: negamax already checks the transposition table, so no need to check here.
-    Returns (score, move, depth) if successful.
+    Play a single self-play game and track visited positions.
+    Returns (result, num_moves).
+
+    Args:
+        exploration_rate: Probability of playing a random valid move instead of optimal
     """
-    score, best_move = negamax(
-        board, current_player, max_depth, evaluator,
-        float('-inf'), float('inf'), deadline=None, ply=0, tt=tt,
-        hash_value=position_hash
-    )
-    if best_move is None:
-        return None
-    # Get the depth from the TT entry (the entry was stored by negamax)
-    stored_depth = tt.get_depth(position_hash)
-    if stored_depth is None:
-        # Shouldn't happen, but use max_depth as fallback
-        stored_depth = max_depth
-    return (score, best_move, stored_depth)
+    import random
+    board.reconstruct_from_moves([])
+    current_player = Player.PLAYER1
+    move_count = 0
+
+    while move_count < GameBoard.MAX_MOVES:
+        # Track position before move
+        position_hash = hasher.compute_hash(board)
+        visited_positions.add(position_hash)
+
+        # Get move from agent (populates TT with positions it explores)
+        # With exploration_rate, sometimes play a random move to explore diverse positions
+        if exploration_rate > 0 and random.random() < exploration_rate:
+            valid_moves = board.get_valid_moves()
+            if valid_moves:
+                move = random.choice(valid_moves)
+            else:
+                move = None
+        else:
+            move = agent.calculate_move(board, current_player, time_per_move)
+
+        if move is None or not board.make_move(move, current_player):
+            return "error", move_count
+
+        move_count += 1
+
+        # Track position after move
+        position_hash_after = hasher.compute_hash(board)
+        visited_positions.add(position_hash_after)
+
+        if board.check_win(current_player):
+            return "win", move_count
+        if board.is_full():
+            return "draw", move_count
+
+        current_player = Player.PLAYER2 if current_player == Player.PLAYER1 else Player.PLAYER1
+
+    return "draw", move_count
 
 
-def select_moves_to_explore(board: GameBoard, player: Player, valid_moves: list,
-                            best_move: Optional[int], evaluator, tt: TranspositionTable,
-                            position_hash: int) -> list:
-    """Select top 2-3 moves to explore based on evaluator score and transposition table."""
-    if not valid_moves:
-        return []
+def extract_positions_from_tt(tt: TranspositionTable, visited_positions: Set[int],
+                              precomputed_moves: Dict[int, Tuple[int, int, int]],
+                              min_depth: int = 0) -> int:
+    """
+    Extract positions from transposition table that were actually visited.
 
-    valid_set = set(valid_moves)
-    move_scores = []
+    Args:
+        tt: Transposition table to extract from
+        visited_positions: Set of position hashes that were actually visited
+        precomputed_moves: Dictionary to add positions to
+        min_depth: Minimum depth to consider (only store positions searched to at least this depth)
 
-    # Score each move from current player's perspective
-    for move in valid_moves:
-        if not board.can_play(move):
+    Returns:
+        Number of new positions added
+    """
+    new_count = 0
+    updated_count = 0
+
+    for position_hash in visited_positions:
+        entry = tt.table.get(position_hash)
+        if entry is None:
             continue
 
-        # Check transposition table for this position after the move
-        row = _get_row_after_move(board, move)
-        move_hash = hasher.update_hash(position_hash, move, row, player)
-        tt_score = tt.get_score(move_hash)
+        score, depth, move = entry
 
-        if tt_score is not None:
-            # TT score is from opponent's perspective (after move, opponent is next to play)
-            # Negate to get score from current player's perspective
-            score = -tt_score
-            move_scores.append((move, score))
-        else:
-            # Use evaluator to score position after move
-            board.make_move(move, player)
-            eval_score = evaluator.evaluate_board(board)
-            # Evaluator returns from P1's perspective, adjust for current player
-            score = -eval_score if player == Player.PLAYER2 else eval_score
-            board.undo_move(move)
-            move_scores.append((move, score))
+        if depth >= min_depth and move is not None:
+            existing = precomputed_moves.get(position_hash)
+            if existing is None:
+                # New position
+                precomputed_moves[position_hash] = (score, move, depth)
+                new_count += 1
+            else:
+                # Position exists - update if new depth is greater
+                existing_score, existing_move, existing_depth = existing
+                if depth > existing_depth:
+                    precomputed_moves[position_hash] = (score, move, depth)
+                    updated_count += 1
 
-    # Sort by score (descending - best moves first)
-    move_scores.sort(key=lambda x: x[1], reverse=True)
-
-    # Select top MAX_BEST_MOVES moves
-    moves_to_explore = [move for move, _ in move_scores[:MAX_BEST_MOVES]]
-
-    # Always include best_move if available and not already included
-    if best_move is not None and best_move in valid_set and best_move not in moves_to_explore:
-        moves_to_explore.insert(0, best_move)
-        # Keep only top MAX_BEST_MOVES
-        moves_to_explore = moves_to_explore[:MAX_BEST_MOVES]
-
-    return moves_to_explore
+    return new_count + updated_count
 
 
-def _get_row_after_move(board: GameBoard, col: int) -> int:
-    """Get the row index after making a move in the given column."""
-    col_base = col * (GameBoard.HEIGHT + 1)
-    col_mask = board.mask & (((1 << (GameBoard.HEIGHT + 1)) - 1) << col_base)
-    return col_mask.bit_count() if hasattr(int, 'bit_count') else bin(col_mask).count('1')
+def generate_precomputed_moves_self_play(time_limit_seconds: float,
+                                         time_per_move: int = 100,
+                                         min_depth: int = 0,
+                                         max_depth: int = 42,
+                                         evaluator_name: str = "new",
+                                         existing_moves: Optional[Dict[int,
+                                                                       Tuple[int, int, int]]] = None,
+                                         adaptive_time: bool = True,
+                                         max_time_per_move: int = 10000,
+                                         exploration_rate: float = 0.1) -> Dict[int, Tuple[int, int, int]]:
+    """
+    Generate precomputed moves through self-play.
 
+    The agent plays against itself, and only positions actually encountered
+    during games are stored. As search depth increases, only positions
+    searched to sufficient depth are cached.
 
-def explore_positions(board: GameBoard, current_player: Player, depth: int,
-                      max_explore_depth: int, max_search_depth: int,
-                      precomputed_moves: Dict[int, Tuple[int, int, int]], explored: Set[int],
-                      tt: TranspositionTable, stats: Dict[str, int],
-                      evaluator=None) -> None:
-    """Recursively explore positions and solve them using minimax."""
-    global pbar
+    Adaptive behavior is based on:
+    - Connect 4 branching factor: ~7 moves per position
+    - Time-depth relationship: Each depth level requires ~7x more time
+    - Position discovery rate: Adjust based on actual new positions found
 
-    if depth >= max_explore_depth:
-        return
+    Args:
+        time_limit_seconds: How long to run self-play (in seconds)
+        time_per_move: Initial time per move in milliseconds
+        min_depth: Minimum search depth to cache positions
+        max_depth: Maximum search depth to use
+        evaluator_name: Which evaluator to use ("old" or "new")
+        existing_moves: Existing precomputed moves to merge with
+        adaptive_time: If True, adaptively adjust time and depth based on discovery rate
+        max_time_per_move: Maximum time per move when using adaptive time
+        exploration_rate: Probability of playing a random move instead of optimal (0.0-1.0)
+                         Higher values explore more diverse positions but play worse
 
-    if board.check_win(Player.PLAYER1) or board.check_win(Player.PLAYER2) or board.is_full():
-        return
-
-    position_hash = hasher.compute_hash(board)
-
-    if position_hash in explored:
-        stats['skipped_explored'] += 1
-        return
-
-    explored.add(position_hash)
-
-    result = precomputed_moves.get(position_hash)
-    if result is None:
-        result = solve_position(
-            board, current_player, max_search_depth, tt, position_hash, evaluator)
-        if result is None:
-            return
-        score, best_move, stored_depth = result
-        precomputed_moves[position_hash] = (score, best_move, stored_depth)
-        stats['solved'] += 1
-        if pbar is not None:
-            pbar.update(1)
-    else:
-        _, best_move, _ = result
-        stats['skipped_existing'] += 1
-
-    valid_moves = board.get_valid_moves()
-    moves_to_explore = select_moves_to_explore(
-        board, current_player, valid_moves, best_move, evaluator, tt, position_hash)
-
-    if not moves_to_explore:
-        return
-
-    opponent = Player.PLAYER2 if current_player == Player.PLAYER1 else Player.PLAYER1
-    for move in moves_to_explore:
-        board.make_move(move, current_player)
-        explore_positions(board, opponent, depth + 1, max_explore_depth,
-                          max_search_depth, precomputed_moves, explored, tt, stats, evaluator)
-        board.undo_move(move)
-
-
-def solve_all_positions_efficiently(tt: TranspositionTable,
-                                    precomputed_moves: Dict[int, Tuple[int, int, int]]) -> int:
-    """Efficiently solve all positions by solving the starting position once."""
-    board = GameBoard()
-    position_hash = hasher.compute_hash(board)
-
-    global pbar
-    # Start with indeterminate progress bar for solving
-    pbar = tqdm(desc="Solving game tree", unit="nodes", dynamic_ncols=True)
-
-    # Solve starting position - fills TT with all positions
-    negamax(
-        board, Player.PLAYER1, GameBoard.MAX_MOVES,
-        evaluator=None,
-        alpha=float('-inf'),
-        beta=float('inf'),
-        deadline=None,
-        ply=0,
-        tt=tt,
-        hash_value=position_hash
-    )
-
-    # Close the solving bar and create extraction bar
-    pbar.close()
-
-    # Extract all positions from TT
-    pbar = tqdm(total=len(tt.table), desc="Extracting positions",
-                unit="pos", dynamic_ncols=True)
-
-    initial_size = len(precomputed_moves)
-    for hash_value, (score, depth, move) in tt.table.items():
-        if hash_value not in precomputed_moves and move is not None:
-            precomputed_moves[hash_value] = (score, move, depth)
-        pbar.update(1)
-
-    pbar.close()
-    return len(precomputed_moves) - initial_size
-
-
-def count_positions_to_solve(board: GameBoard, current_player: Player, depth: int,
-                             max_explore_depth: int, existing_moves: Dict[int, Tuple[int, int, int]],
-                             explored: Set[int], evaluator, tt: TranspositionTable) -> int:
-    """Count how many positions will actually be solved (excluding skipped/existing)."""
-    if depth >= max_explore_depth:
-        return 0
-
-    if board.check_win(Player.PLAYER1) or board.check_win(Player.PLAYER2) or board.is_full():
-        return 0
-
-    position_hash = hasher.compute_hash(board)
-    if position_hash in explored:
-        return 0
-
-    explored.add(position_hash)
-    count = 1 if position_hash not in existing_moves else 0
-
-    opponent = Player.PLAYER2 if current_player == Player.PLAYER1 else Player.PLAYER1
-    valid_moves = board.get_valid_moves()
-    # Use same move selection logic as exploration
-    moves_to_explore = select_moves_to_explore(
-        board, current_player, valid_moves, None, evaluator, tt, position_hash)
-
-    for move in moves_to_explore:
-        board.make_move(move, current_player)
-        count += count_positions_to_solve(board, opponent, depth + 1,
-                                          max_explore_depth, existing_moves, explored, evaluator, tt)
-        board.undo_move(move)
-
-    return count
-
-
-def generate_precomputed_moves(max_explore_depth: int = 8,
-                               max_search_depth: Optional[int] = None,
-                               existing_moves: Optional[Dict[int, Tuple[int, int, int]]] = None) -> Dict[int, Tuple[int, int, int]]:
-    """Generate precomputed moves database by solving positions with minimax."""
-    max_search_depth = max_search_depth or GameBoard.MAX_MOVES
+    Returns:
+        Dictionary of precomputed moves
+    """
     existing_moves = existing_moves or {}
+    precomputed_moves = dict(existing_moves)
 
-    tt = TranspositionTable()
+    # Create agent with shared transposition table
+    agent = IterativeDeepeningBot(evaluator_name)
+    tt = agent.tt  # Shared transposition table
+
+    # Pre-load existing moves into TT
     for hash_val, (score, move, depth) in existing_moves.items():
         tt.store(hash_val, score, depth, move)
 
-    precomputed_moves = dict(existing_moves)
-    stats = {'solved': 0, 'skipped_existing': 0, 'skipped_explored': 0}
+    hasher = get_hasher()
+    visited_positions: Set[int] = set()
 
-    solving_to_max_depth = max_search_depth >= GameBoard.MAX_MOVES
+    start_time = time.perf_counter()
+    game_count = 0
+    total_moves = 0
+    initial_position_count = len(precomputed_moves)
 
-    if solving_to_max_depth:
-        print("Using efficient full-solve mode (solving to max depth)...")
-        if existing_moves:
-            print(f"Pre-loaded {len(existing_moves)} existing positions")
+    # Adaptive parameters
+    current_time_per_move = time_per_move
+    current_min_depth = min_depth
 
-        stats['solved'] = solve_all_positions_efficiently(
-            tt, precomputed_moves)
+    # Track discovery rate for adaptive adjustments
+    # Connect 4 has ~7 moves per position on average (branching factor)
+    BRANCHING_FACTOR = 7.0
+    # Each depth level requires roughly BRANCHING_FACTOR more time
+    DEPTH_TIME_MULTIPLIER = BRANCHING_FACTOR
 
-        print("=" * 70)
-        print(f"Statistics:")
-        print(f"  Pre-loaded: {len(existing_moves)}")
-        print(f"  Newly solved: {stats['solved']}")
-        print(f"  Total positions: {len(precomputed_moves)}")
-        print(f"  TT size: {len(tt.table)}")
-    else:
-        print(f"Using exploration mode...")
-        print(
-            f"Solving positions up to exploration depth {max_explore_depth}...")
-        print(f"Using minimax search depth: {max_search_depth}")
-        if existing_moves:
-            print(f"Pre-loaded {len(existing_moves)} existing positions")
+    # Track recent discovery rate (positions per game over last N games)
+    recent_discoveries = []  # List of (game_count, new_positions) tuples
+    DISCOVERY_WINDOW = 10  # Look at last 10 games for rate calculation
 
-        evaluator = BoardEvaluator()
+    # Progress tracking
+    pbar = tqdm(desc="Self-play", unit="games", dynamic_ncols=True)
 
-        print("Counting positions to solve...")
+    print(f"Starting self-play for {time_limit_seconds:.1f} seconds...")
+    print(f"Time per move: {time_per_move}ms")
+    print(f"Initial minimum depth to cache: {current_min_depth}")
+    print(f"Maximum search depth: {max_depth}")
+
+    while time.perf_counter() - start_time < time_limit_seconds:
+
+        # Play a game
         board = GameBoard()
-        count_explored = set()
-        tt_count = TranspositionTable()  # Use fresh TT for counting
-        for hash_val, (score, move, depth) in existing_moves.items():
-            tt_count.store(hash_val, score, depth, move)
-        total_to_solve = count_positions_to_solve(board, Player.PLAYER1, 0,
-                                                  max_explore_depth, existing_moves, count_explored, evaluator, tt_count)
+        _, moves = play_self_play_game(
+            agent, board, current_time_per_move, visited_positions, exploration_rate)
 
-        global pbar
-        pbar = tqdm(total=total_to_solve, desc="Solving",
-                    unit="pos", dynamic_ncols=True)
+        game_count += 1
+        total_moves += moves
 
-        explored = set()
-        explore_positions(board, Player.PLAYER1, 0, max_explore_depth,
-                          max_search_depth, precomputed_moves, explored, tt, stats, evaluator)
+        # Extract positions from TT that were visited and meet depth requirement
+        positions_before = len(precomputed_moves)
+        extract_positions_from_tt(
+            tt, visited_positions, precomputed_moves,
+            min_depth=current_min_depth
+        )
 
-        pbar.close()
+        total_new_positions = len(precomputed_moves) - initial_position_count
+        new_this_game = len(precomputed_moves) - positions_before
 
-        print("=" * 70)
-        print(f"Statistics:")
-        print(f"  Newly solved: {stats['solved']}")
-        print(f"  Skipped (existing): {stats['skipped_existing']}")
-        print(f"  Skipped (already explored): {stats['skipped_explored']}")
-        print(f"  Total positions: {len(precomputed_moves)}")
-        print(f"  TT size: {len(tt.table)}")
+        # Track discovery rate
+        recent_discoveries.append((game_count, new_this_game))
+        if len(recent_discoveries) > DISCOVERY_WINDOW:
+            recent_discoveries.pop(0)
+
+        # Calculate average discovery rate over recent games
+        recent_total = sum(pos for _, pos in recent_discoveries)
+        discovery_rate = recent_total / \
+            len(recent_discoveries) if recent_discoveries else 0
+
+        # Adaptive adjustment based on discovery rate and TT analysis
+        if adaptive_time and len(recent_discoveries) >= DISCOVERY_WINDOW:
+            # Analyze TT to see what depth we're actually reaching
+            tt_depths = [entry[1]
+                         for entry in tt.table.values() if entry[1] is not None]
+            if tt_depths:
+                avg_tt_depth = sum(tt_depths) / len(tt_depths)
+                max_tt_depth = max(tt_depths)
+            else:
+                avg_tt_depth = 0
+                max_tt_depth = 0
+
+            # If discovery rate is very low and we're searching deeper than we're caching
+            if discovery_rate < 0.1 and max_tt_depth > current_min_depth + 2:
+                # Increase min_depth to match what we're actually searching
+                # This ensures we cache the positions we're already exploring
+                if current_min_depth < max_tt_depth - 1:
+                    current_min_depth = min(
+                        current_min_depth + 1, max_tt_depth - 1, max_depth)
+                    # Extract all positions from TT at new depth
+                    all_tt_positions = set(tt.table.keys())
+                    extract_positions_from_tt(
+                        tt, all_tt_positions, precomputed_moves, min_depth=current_min_depth)
+                    pbar.set_description(
+                        f"Self-play (min_depth {current_min_depth})")
+
+            # If discovery rate is zero and we're not searching much deeper than min_depth
+            elif discovery_rate == 0 and max_tt_depth <= current_min_depth + 1:
+                # Need to search deeper - increase time based on branching factor
+                # To go one depth deeper, we need roughly BRANCHING_FACTOR more time
+                if current_time_per_move < max_time_per_move:
+                    # Calculate time needed for one more depth level
+                    time_for_next_depth = int(
+                        current_time_per_move * DEPTH_TIME_MULTIPLIER)
+                    # But don't increase too aggressively - cap at 2x per adjustment
+                    new_time = min(time_for_next_depth,
+                                   current_time_per_move * 2, max_time_per_move)
+                    if new_time > current_time_per_move:
+                        current_time_per_move = new_time
+                        # Extract all positions from TT when time increases
+                        all_tt_positions = set(tt.table.keys())
+                        extract_positions_from_tt(
+                            tt, all_tt_positions, precomputed_moves, min_depth=current_min_depth)
+                        pbar.set_description(
+                            f"Self-play (time: {current_time_per_move}ms)")
+
+            # Gradually increase min_depth over time to keep up with deeper searches
+            # This is based on elapsed time, not discovery rate
+            elapsed = time.perf_counter() - start_time
+            target_min_depth = min_depth + \
+                int((elapsed / time_limit_seconds) * (max_depth - min_depth))
+            if target_min_depth > current_min_depth and current_min_depth < max_depth:
+                current_min_depth = min(target_min_depth, max_depth)
+                all_tt_positions = set(tt.table.keys())
+                extract_positions_from_tt(
+                    tt, all_tt_positions, precomputed_moves, min_depth=current_min_depth)
+                pbar.set_description(
+                    f"Self-play (min_depth {current_min_depth})")
+
+        pbar.update(1)
+        pbar.set_postfix({
+            'games': game_count,
+            'positions': len(precomputed_moves),
+            'new': total_new_positions,
+            'time_ms': current_time_per_move
+        })
+
+        visited_positions.clear()
+
+    pbar.close()
+
+    # Final pass: extract any remaining positions from TT that meet criteria
+    print("\nPerforming final extraction from transposition table...")
+    all_tt_positions = set(tt.table.keys())
+    final_new = extract_positions_from_tt(tt, all_tt_positions, precomputed_moves,
+                                          min_depth=current_min_depth)
+    if final_new > 0:
+        print(f"  Extracted {final_new} additional positions from TT")
+
+    elapsed = time.perf_counter() - start_time
+
+    print("=" * 70)
+    print(f"Self-play Statistics:")
+    print(f"  Time elapsed: {elapsed:.1f}s")
+    print(f"  Games played: {game_count}")
+    print(f"  Total moves: {total_moves}")
+    print(
+        f"  Average moves per game: {total_moves / game_count if game_count > 0 else 0:.1f}")
+    print(f"  Pre-loaded positions: {len(existing_moves)}")
+    print(
+        f"  New positions cached: {len(precomputed_moves) - len(existing_moves)}")
+    print(f"  Total positions: {len(precomputed_moves)}")
+    print(f"  TT size: {len(tt.table)}")
+    print(f"  Final minimum depth: {current_min_depth}")
+    print(f"  Final time per move: {current_time_per_move}ms")
+    print("=" * 70)
 
     return precomputed_moves
 
@@ -321,27 +340,59 @@ def write_precomputed_moves(precomputed_moves: Dict[int, Tuple[int, int, int]],
 
 
 def main():
-    """Main entry point."""
-    max_explore_depth = int(sys.argv[1]) if len(sys.argv) > 1 else 8
-    max_search_depth = int(sys.argv[2]) if len(
-        sys.argv) > 2 else GameBoard.MAX_MOVES
-    merge_existing = sys.argv[3].lower(
-    ) != 'replace' if len(sys.argv) > 3 else True
+    """
+    Main entry point for self-play position generation.
 
-    existing_moves = {}
-    if merge_existing:
-        existing_moves = load_existing_moves()
-        if existing_moves:
-            print(f"Loaded {len(existing_moves)} existing precomputed moves")
+    Usage:
+        python solve_positions.py <time_seconds> [time_per_move_ms] [min_depth] [evaluator] [max_time_per_move_ms]
 
-    precomputed_moves = generate_precomputed_moves(
-        max_explore_depth=max_explore_depth,
-        max_search_depth=max_search_depth,
-        existing_moves=existing_moves if merge_existing else {}
+    Arguments:
+        time_seconds: How long to run self-play (in seconds)
+        time_per_move_ms: Initial time per move in milliseconds (default: 100)
+        min_depth: Minimum search depth to cache positions (default: 0)
+        evaluator: Which evaluator to use - "old" or "new" (default: "new")
+        max_time_per_move_ms: Maximum time per move for adaptive time (default: 10000 = 10 seconds)
+
+    Examples:
+        # Run for 60 seconds with defaults
+        python solve_positions.py 60
+
+        # Run for 120 seconds with 150ms per move
+        python solve_positions.py 120 150
+
+        # Run with minimum depth of 2
+        python solve_positions.py 60 100 2
+
+        # Run with old evaluator
+        python solve_positions.py 60 100 0 old
+
+        # Run with higher time limits for deeper search (30 seconds per move max)
+        python solve_positions.py 300 1000 0 new 30000
+    """
+    time_limit = float(sys.argv[1]) if len(sys.argv) > 1 else 60.0
+    time_per_move = int(sys.argv[2]) if len(sys.argv) > 2 else 100
+    min_depth = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+    evaluator_name = sys.argv[4] if len(sys.argv) > 4 else "new"
+    max_time_per_move = int(sys.argv[5]) if len(sys.argv) > 5 else 10000
+
+    existing_moves = load_existing_moves()
+    if existing_moves:
+        print(f"Loaded {len(existing_moves)} existing precomputed moves")
+
+    precomputed_moves = generate_precomputed_moves_self_play(
+        time_limit_seconds=time_limit,
+        time_per_move=time_per_move,
+        min_depth=min_depth,
+        max_depth=GameBoard.MAX_MOVES,
+        evaluator_name=evaluator_name,
+        existing_moves=existing_moves,
+        adaptive_time=True,
+        max_time_per_move=max_time_per_move,
+        exploration_rate=0.1  # 10% random moves to explore diverse positions
     )
 
     new_count = len(precomputed_moves) - len(existing_moves)
-    if existing_moves and new_count > 0:
+    if new_count > 0:
         print(f"\nSummary: {new_count} new positions added")
 
     write_precomputed_moves(precomputed_moves)

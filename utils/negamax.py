@@ -5,8 +5,6 @@ from utils.engine import GameBoard, Player
 from utils.transposition_table import TranspositionTable
 from utils.zobrist import get_hasher
 
-MATE_SCORE = 1000
-
 
 def negamax(board: GameBoard, player: Player, depth: int, evaluator,
             alpha: float = float('-inf'), beta: float = float('inf'),
@@ -14,7 +12,6 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
             ply: int = 0,
             tt: Optional[TranspositionTable] = None,
             hash_value: Optional[int] = None) -> Tuple[int, Optional[int]]:
-
     if tt is None:
         tt = TranspositionTable()
     hasher = get_hasher()
@@ -22,57 +19,67 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
     if hash_value is None:
         hash_value = hasher.compute_hash(board)
 
+    # Check transposition table
     tt_result = tt.get(hash_value, depth, alpha, beta)
     if tt_result is not None:
         return tt_result
 
-    # Get valid moves in center-first order, then order by transposition table scores
+    # Get valid moves
     moves = board.get_valid_moves()
-    if not moves:  # check draw
+    if not moves:  # Draw
         return (0, None)
 
-    if depth == 0:
-        score = evaluator.evaluate_board(board)
-        score = -score if player == Player.PLAYER2 else score
-        # Don't cache leaf node evaluations (cheap and numerous)
-        return (score, None)
+    if depth == 0: # Non-Terminal Leaf
+        return (0, None)
 
-    # Pre-compute opponent to avoid repeated conditionals
     opponent = Player.PLAYER2 if player == Player.PLAYER1 else Player.PLAYER1
 
-    # Order moves by transposition table scores
+    max_score_when_not_winning = (GameBoard.MAX_MOVES - 1 - board.move_count) // 2
+    if beta > max_score_when_not_winning:
+        beta = max_score_when_not_winning
+        if alpha >= beta:
+            # Empty window - return first move with bound score
+            return beta, moves[0] if moves else None
+
+    # Order moves by transposition table scores for better pruning
     move_data = []
     for move in moves:
         row = _get_row_after_move(board, move)
         move_hash = hasher.update_hash(hash_value, move, row, player)
-        opponent_score = tt.get_score(move_hash) or MATE_SCORE
-        move_data.append((move, move_hash, opponent_score))
+        opponent_score = tt.get_score(move_hash)
+        move_data.append((move, move_hash,
+                         opponent_score if opponent_score is not None else max_score_when_not_winning))
+    move_data.sort(key=lambda x: x[2])
 
-    move_data.sort(key=lambda x: x[2])  # Sort by opponent score (ascending)
-
-    best_score, best_move = -MATE_SCORE, None
+    # Initialize with worst score and first move (ensure we always return a move)
+    best_score, best_move = -max_score_when_not_winning, move_data[0][0]
 
     for move, move_hash, _ in move_data:
         # Check deadline before recursive call
         if deadline and time.perf_counter() >= deadline:
-            return -MATE_SCORE, None
+            return best_score, best_move
 
         board.make_move(move, player)
+
+        # Check for immediate win
         if board.check_win(player):
-            score = MATE_SCORE - ply
+            # Win score = (MAX_MOVES + 1 - nbMoves()) / 2
+            score = (GameBoard.MAX_MOVES + 1 - board.move_count) // 2
             board.undo_move(move)
             tt.store(hash_value, score, depth, move)
             return score, move
 
-        score = -negamax(board, opponent, depth - 1, evaluator, -beta, -alpha,
-                         deadline, ply + 1, tt, move_hash)[0]
+        # Recursive search
+        score_result = negamax(board, opponent, depth - 1, evaluator,
+                               -beta, -alpha, deadline, ply + 1, tt, move_hash)
+        score = -score_result[0]
         board.undo_move(move)
 
-        # If recursive call timed out, propagate timeout
-        # Uniquely identifies timout because opponent mate always has ply > 0
-        if score == MATE_SCORE:
-            return MATE_SCORE, None
+        # Handle timeout from recursive call
+        if score_result[1] is None and deadline and time.perf_counter() >= deadline:
+            continue
 
+        # Update best move
         if score > best_score:
             best_score, best_move = score, move
 
