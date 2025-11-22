@@ -15,9 +15,6 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
             tt: Optional[TranspositionTable] = None,
             hash_value: Optional[int] = None) -> Tuple[float, Optional[int]]:
 
-    if deadline and time.perf_counter() >= deadline:
-        return float('-inf'), None
-
     if tt is None:
         tt = TranspositionTable()
     hasher = get_hasher()
@@ -40,7 +37,10 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
     if not moves:
         return (0, None)
 
-    # Order moves by transposition table scores for better move ordering
+    # Pre-compute opponent to avoid repeated conditionals
+    opponent = Player.PLAYER2 if player == Player.PLAYER1 else Player.PLAYER1
+
+    # Order moves by transposition table scores
     move_data = []
     for move in moves:
         row = _get_row_after_move(board, move)
@@ -51,22 +51,27 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
     move_data.sort(key=lambda x: x[2])  # Sort by opponent score (ascending)
 
     best_score, best_move = float('-inf'), None
-    opponent = Player.PLAYER2 if player == Player.PLAYER1 else Player.PLAYER1
 
     for move, move_hash, _ in move_data:
+        # Check deadline before recursive call
         if deadline and time.perf_counter() >= deadline:
-            return float('-inf'), None
+            return -MATE_SCORE, None
 
         board.make_move(move, player)
         if board.check_win(player):
-            board.undo_move(move)
             score = MATE_SCORE - ply
+            board.undo_move(move)
             tt.store(hash_value, score, depth, move)
-            return (score, move)
+            return score, move
 
         score = -negamax(board, opponent, depth - 1, evaluator, -beta, -alpha,
                          deadline, ply + 1, tt, move_hash)[0]
         board.undo_move(move)
+
+        # If recursive call timed out, propagate timeout
+        # Uniquely identifies timout because opponent mate always has ply > 0
+        if score == MATE_SCORE:
+            return MATE_SCORE, None
 
         if score > best_score:
             best_score, best_move = score, move

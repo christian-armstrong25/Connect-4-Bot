@@ -6,11 +6,11 @@ from Agents.minimax import MinimaxBot
 from engine import GameBoard, Player
 
 
-def run_game(time_limit_ms: int = 25, randomize_start: bool = False, verbose: bool = True) -> str:
+def run_game(time_limit_ms: int = 15, randomize_start: bool = False, verbose: bool = True) -> str:
     board = GameBoard()
     agents = {
         Player.PLAYER1: IterativeDeepeningBot("old"),
-        Player.PLAYER2: IterativeDeepeningBot("new")
+        Player.PLAYER2: MinimaxBot("new")
     }
 
     # Randomize starting player for fairness
