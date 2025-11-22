@@ -20,6 +20,8 @@ class GameBoard:
         self.mask = 0      # All occupied cells
         self._current_player_in_position = Player.PLAYER1
         self.last_move: Optional[int] = None  # Last column played
+        # Valid moves in center-first order: [3, 2, 4, 1, 5, 0, 6]
+        self._valid_moves = [3, 2, 4, 1, 5, 0, 6]
 
     @staticmethod
     def _top_mask(col: int) -> int:
@@ -31,6 +33,10 @@ class GameBoard:
 
     def can_play(self, col: int) -> bool:
         return not (self.mask & self._top_mask(col))
+
+    def get_valid_moves(self) -> List[int]:
+        """Return cached valid moves in center-first order."""
+        return self._valid_moves
 
     @property
     def boards(self):
@@ -81,6 +87,11 @@ class GameBoard:
         self._current_player_in_position = player
         self.move_count += 1
         self.last_move = column
+
+        # If column is now full, remove it from valid moves
+        if not self.can_play(column) and column in self._valid_moves:
+            self._valid_moves.remove(column)
+
         return True
 
     def undo_move(self, column: Optional[int] = None) -> None:
@@ -98,6 +109,18 @@ class GameBoard:
         # Switch players back
         self.position ^= self.mask
         self._current_player_in_position = Player.PLAYER2 if self._current_player_in_position == Player.PLAYER1 else Player.PLAYER1
+
+        # If column is now available, add it back to valid moves in center-first order
+        if column is not None and self.can_play(column) and column not in self._valid_moves:
+            CENTER_FIRST = [3, 2, 4, 1, 5, 0, 6]
+            column_index = CENTER_FIRST.index(column)
+            # Insert before the first move that comes after this column in center-first order
+            for i, move in enumerate(self._valid_moves):
+                if CENTER_FIRST.index(move) > column_index:
+                    self._valid_moves.insert(i, column)
+                    return
+            # If no later move found, append to end
+            self._valid_moves.append(column)
 
     def is_full(self) -> bool:
         return self.move_count >= self.MAX_MOVES
@@ -135,6 +158,7 @@ class GameBoard:
         self.move_count = 0
         self._current_player_in_position = Player.PLAYER1
         self.last_move = None
+        self._valid_moves = [3, 2, 4, 1, 5, 0, 6]
 
         for i, col in enumerate(moves):
             self.make_move(col, Player.PLAYER1 if i %

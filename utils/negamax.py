@@ -1,72 +1,86 @@
 import time
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 from engine import GameBoard, Player
+from utils.transposition_table import TranspositionTable
+from utils.zobrist import get_hasher
 
-# Mate score constant - large enough that regular eval scores never reach it
 MATE_SCORE = 1000
 
 
 def negamax(board: GameBoard, player: Player, depth: int, evaluator,
             alpha: float = float('-inf'), beta: float = float('inf'),
             deadline: Optional[float] = None,
-            first_move: Optional[int] = None,
             ply: int = 0,
-            move_scores: Optional[List[Tuple[float, int]]] = None,
-            ordered_moves: Optional[list] = None) -> Tuple[float, Optional[int]]:
-    # Draw check
-    if board.is_full():
-        return (0, None)
+            tt: Optional[TranspositionTable] = None,
+            hash_value: Optional[int] = None) -> Tuple[float, Optional[int]]:
 
-    # Depth cutoff check
+    if deadline and time.perf_counter() >= deadline:
+        return float('-inf'), None
+
+    if tt is None:
+        tt = TranspositionTable()
+    hasher = get_hasher()
+
+    if hash_value is None:
+        hash_value = hasher.compute_hash(board)
+
+    tt_result = tt.get(hash_value, depth, alpha, beta)
+    if tt_result is not None:
+        return tt_result
+
     if depth == 0:
         score = evaluator.evaluate_board(board)
-        return (-score if player == Player.PLAYER2 else score, None)
+        score = -score if player == Player.PLAYER2 else score
+        tt.store(hash_value, score, depth, None)
+        return (score, None)
 
-    # Move ordering: use pre-ordered moves or default center-first ordering
-    moves = ordered_moves if ordered_moves else _get_default_moves(first_move)
-    # Filter invalid moves
-    moves = [m for m in moves if board.can_play(m)]
+    # Get valid moves in center-first order, then order by transposition table scores
+    moves = board.get_valid_moves()
+    if not moves:
+        return (0, None)
+
+    # Order moves by transposition table scores for better move ordering
+    move_data = []
+    for move in moves:
+        row = _get_row_after_move(board, move)
+        move_hash = hasher.update_hash(hash_value, move, row, player)
+        opponent_score = tt.get_score(move_hash) or float('inf')
+        move_data.append((move, move_hash, opponent_score))
+
+    move_data.sort(key=lambda x: x[2])  # Sort by opponent score (ascending)
 
     best_score, best_move = float('-inf'), None
-    for move in moves:
-        # Time cutoff check
+    opponent = Player.PLAYER2 if player == Player.PLAYER1 else Player.PLAYER1
+
+    for move, move_hash, _ in move_data:
         if deadline and time.perf_counter() >= deadline:
             return float('-inf'), None
 
         board.make_move(move, player)
-
-        # Immediate win check
         if board.check_win(player):
             board.undo_move(move)
-            return MATE_SCORE - ply, move
+            score = MATE_SCORE - ply
+            tt.store(hash_value, score, depth, move)
+            return (score, move)
 
-        # Recursive search - pass ordered_moves down to propagate ordering
-        opponent = Player.PLAYER2 if player == Player.PLAYER1 else Player.PLAYER1
-        score = -negamax(board, opponent, depth - 1, evaluator,
-                         -beta, -alpha, deadline, best_move, ply + 1,
-                         move_scores, None)[0]
+        score = -negamax(board, opponent, depth - 1, evaluator, -beta, -alpha,
+                         deadline, ply + 1, tt, move_hash)[0]
         board.undo_move(move)
 
-        # Store scores for move ordering
-        if move_scores is not None and ply == 0:
-            move_scores.append((score, move))
-
-        # Update best move
         if score > best_score:
             best_score, best_move = score, move
 
-        # alpha-beta pruning
         alpha = max(alpha, score)
         if alpha >= beta:
-            break  # Beta cutoff
+            tt.store(hash_value, alpha, depth, best_move)
+            return (alpha, best_move)
 
+    tt.store(hash_value, best_score, depth, best_move)
     return best_score, best_move
 
 
-def _get_default_moves(first_move: Optional[int] = None) -> list:
-    """Return default move ordering (center-first) with optional PV move first."""
-    moves = [3, 2, 4, 1, 5, 0, 6]
-    if first_move is not None and first_move in moves[1:]:
-        moves = [first_move] + [m for m in moves if m != first_move]
-    return moves
+def _get_row_after_move(board: GameBoard, col: int) -> int:
+    col_base = col * (GameBoard.HEIGHT + 1)
+    col_mask = board.mask & (((1 << (GameBoard.HEIGHT + 1)) - 1) << col_base)
+    return col_mask.bit_count() if hasattr(int, 'bit_count') else bin(col_mask).count('1')

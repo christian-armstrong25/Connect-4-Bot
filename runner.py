@@ -16,10 +16,12 @@ def run_game(time_limit_ms: int = 25, randomize_start: bool = False, verbose: bo
     # Randomize starting player for fairness
     if randomize_start and random.random() < 0.5:
         current_player = Player.PLAYER2
-        if verbose: print("🎲 Random start: O (new) goes first\n")
+        if verbose:
+            print("🎲 Random start: O (new) goes first\n")
     else:
         current_player = Player.PLAYER1
-        if verbose: print("🎲 Random start: X (old) goes first\n")
+        if verbose:
+            print("🎲 Random start: X (old) goes first\n")
 
     # Maximum 42 moves in Connect 4 (6 rows * 7 columns)
     for move_count in range(1, 43):
@@ -33,25 +35,32 @@ def run_game(time_limit_ms: int = 25, randomize_start: bool = False, verbose: bo
 
         # Check for timeout
         if elapsed_ms > time_limit_ms:
-            if verbose: print(f"⏰ {player_name} timed out after {elapsed_ms:.2f}ms (limit: {time_limit_ms}ms)")
+            if verbose:
+                print(
+                    f"⏰ {player_name} timed out after {elapsed_ms:.2f}ms (limit: {time_limit_ms}ms)")
             return "timeout"
 
         # Validate move
         if move is None or not board.make_move(move, current_player):
-            if verbose: print(f"❌ Invalid move from {player_name}: {move}")
+            if verbose:
+                print(f"❌ Invalid move from {player_name}: {move}")
             return "error"
 
-        # Display move and board
-        if verbose: print(f"Move {move_count}: {player_name} -> Column {move} ({elapsed_ms:.2f}ms)\n{board}\n")
+        if verbose:
+            print(
+                f"Move {move_count}: {player_name} -> Column {move} ({elapsed_ms:.2f}ms)")
+            print(f"{board}\n")
 
         # Check win
         if board.check_win(current_player):
-            if verbose: print(f"🏆 {player_name} wins!")
+            if verbose:
+                print(f"🏆 {player_name} wins!")
             return player_name
 
         # Check draw
         if board.is_full():
-            if verbose: print("🤝 Draw!")
+            if verbose:
+                print("🤝 Draw!")
             return "draw"
 
         # Switch players
