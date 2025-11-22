@@ -9,7 +9,7 @@ from utils.engine import GameBoard, Player
 def run_game(time_limit_ms: int = 15, randomize_start: bool = False, verbose: bool = True) -> str:
     board = GameBoard()
     agents = {
-        Player.PLAYER1: MinimaxBot("old"),
+        Player.PLAYER1: IterativeDeepeningBot("old"),
         Player.PLAYER2: MinimaxBot("new")
     }
 

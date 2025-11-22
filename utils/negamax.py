@@ -28,13 +28,13 @@ def negamax(board: GameBoard, player: Player, depth: int, evaluator,
 
     # Get valid moves in center-first order, then order by transposition table scores
     moves = board.get_valid_moves()
-    if not moves: # check draw
+    if not moves:  # check draw
         return (0, None)
 
     if depth == 0:
         score = evaluator.evaluate_board(board)
         score = -score if player == Player.PLAYER2 else score
-        tt.store(hash_value, score, depth, None)
+        # Don't cache leaf node evaluations (cheap and numerous)
         return (score, None)
 
     # Pre-compute opponent to avoid repeated conditionals
