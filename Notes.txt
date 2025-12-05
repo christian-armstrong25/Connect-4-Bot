@@ -1,0 +1,5 @@
+Beats Minimax 22ply in less than 1ms thanks to precomputed moves.
+If I get bored, I can make some improvements, but this seems good enough to beat everyone
+- http://blog.gamesolver.org/solving-connect-four/09-anticipate-losing-moves/
+- https://tromp.github.io/c4/connect4_thesis.pdf
+- https://james.fabpedigree.com/C4/c4_book.htm

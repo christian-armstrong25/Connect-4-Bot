@@ -6,7 +6,7 @@ from utils.transposition_table import TranspositionTable
 
 
 class MinimaxBot:
-    SEARCH_DEPTH = 4
+    SEARCH_DEPTH = 22
 
     def __init__(self, evaluator_name: str = "old"):
         evaluators = {"old": OldEvaluator, "new": NewEvaluator}

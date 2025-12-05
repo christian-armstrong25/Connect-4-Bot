@@ -1,12 +1,14 @@
 import random
+import sys
 import time
 
 from Agents.ids import IterativeDeepeningBot
 from Agents.minimax import MinimaxBot
 from utils.engine import GameBoard, Player
+from utils.save_positions import save_positions
 
 
-def run_game(time_limit_ms: int = 15, randomize_start: bool = False, verbose: bool = True) -> str:
+def run_game(time_limit_ms: int = 15, randomize_start: bool = False, verbose: bool = True, save_after_game: bool = True) -> str:
     board = GameBoard()
     agents = {
         Player.PLAYER1: IterativeDeepeningBot("old"),
@@ -38,13 +40,15 @@ def run_game(time_limit_ms: int = 15, randomize_start: bool = False, verbose: bo
             if verbose:
                 print(
                     f"⏰ {player_name} timed out after {elapsed_ms:.2f}ms (limit: {time_limit_ms}ms)")
-            return "timeout"
+            result = "timeout"
+            break
 
         # Validate move
         if move is None or not board.make_move(move, current_player):
             if verbose:
                 print(f"❌ Invalid move from {player_name}: {move}")
-            return "error"
+            result = "error"
+            break
 
         if verbose:
             print(
@@ -55,24 +59,33 @@ def run_game(time_limit_ms: int = 15, randomize_start: bool = False, verbose: bo
         if board.check_win(current_player):
             if verbose:
                 print(f"🏆 {player_name} wins!")
-            return player_name
+            result = player_name
+            break
 
         # Check draw
         if board.is_full():
             if verbose:
                 print("🤝 Draw!")
-            return "draw"
+            result = "draw"
+            break
 
         # Switch players
         current_player = Player.PLAYER2 if current_player == Player.PLAYER1 else Player.PLAYER1
+    else:
+        # Should never reach here, but return draw as fallback
+        result = "draw"
 
-    # Should never reach here, but return draw as fallback
-    return "draw"
+    # Save positions after the game
+    if save_after_game:
+        save_positions(agents[Player.PLAYER1].tt, agents[Player.PLAYER2].tt)
+
+    return result
 
 
-def main(time_limit_ms: int = 25, num_games: int = 1):
+def main(time_limit_ms: int = 25, num_games: int = 1, save_after_game: bool = True):
     if num_games == 1:
-        result = run_game(time_limit_ms, randomize_start=False, verbose=True)
+        result = run_game(time_limit_ms, randomize_start=False,
+                          verbose=True, save_after_game=save_after_game)
     else:
         # Run multiple games and collect statistics
         results = {"X (old)": 0, "O (new)": 0, "draw": 0,
@@ -83,7 +96,7 @@ def main(time_limit_ms: int = 25, num_games: int = 1):
 
         for game_num in range(1, num_games + 1):
             result = run_game(
-                time_limit_ms, randomize_start=True, verbose=False)
+                time_limit_ms, randomize_start=True, verbose=False, save_after_game=save_after_game)
             results[result] = results.get(result, 0) + 1
 
             if game_num % 10 == 0 or game_num == num_games:
@@ -110,9 +123,9 @@ def main(time_limit_ms: int = 25, num_games: int = 1):
 
 
 if __name__ == "__main__":
-    import sys
-
-    # python tournament_runner.py [time_limit_ms] [num_games]
+    # python runner.py [time_limit_ms] [num_games] [save_after_game]
     time_limit = int(sys.argv[1]) if len(sys.argv) > 1 else 25
     num_games = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-    main(time_limit, num_games)
+    save_after_game = sys.argv[3].lower(
+    ) != "false" if len(sys.argv) > 3 else True
+    main(time_limit, num_games, save_after_game)

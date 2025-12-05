@@ -1,5 +1,6 @@
 """Transposition table for caching evaluated positions."""
 from typing import Optional, Tuple
+
 from Board_Evals.precomputed_moves import PRECOMPUTED_MOVES
 from utils.engine import GameBoard
 
