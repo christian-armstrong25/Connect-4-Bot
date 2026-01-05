@@ -266,11 +266,11 @@ def main() -> None:
                        Options: "old", "new"
 
     Example:
-        python3 connect4_engine.py IterativeDeepeningBot new
+        python3 engine.py IterativeDeepeningBot new
     """
     if not (2 <= len(sys.argv) <= 3):
         print(
-            "Usage: python3 connect4_engine.py <agent_class_name> [evaluator_name]")
+            "Usage: python3 engine.py <agent_class_name> [evaluator_name]")
         print("Available agents: MinimaxBot, IterativeDeepeningBot")
         print("Available evaluators: old, new")
         sys.exit(1)
